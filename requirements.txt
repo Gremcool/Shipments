@@ -1,0 +1,6 @@
+streamlit
+streamlit-aggrid
+streamlit-quill
+pandas
+openpyxl
+plotly

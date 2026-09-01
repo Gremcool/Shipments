@@ -1,0 +1,12 @@
+# Ignore local database & test files
+*.db
+shipment_tracker.db
+
+# Ignore Python cache
+__pycache__/
+*.pyc
+
+# Ignore local environment files
+.env
+venv/
+.venv/
