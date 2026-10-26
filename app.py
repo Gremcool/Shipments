@@ -27,7 +27,55 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
-db.init_db()
+
+
+@st.cache_resource(show_spinner=False)
+def _boot(day):
+  """Schema/index setup + daily backup run once per day, not on every click."""
+  db.init_db()
+  db.auto_backup_daily()
+  return True
+
+
+_boot(datetime.now().strftime("%Y%m%d"))
+_DBV = db.db_version()  # changes whenever anything is written to the database
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def cached_dropdowns(category, ver):
+  return db.get_dropdowns(category)
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def cached_load(fiscal_year, ver):
+  return db.load_data(fiscal_year)
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def build_export_bytes(_export_df, cache_key):
+  buf = io.BytesIO()
+  with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+    _export_df.to_excel(writer, index=False, sheet_name="Shipments")
+  return buf.getvalue()
+
+
+@st.cache_data(show_spinner=False)
+def build_template_bytes(cols, help_map):
+  buf = io.BytesIO()
+  with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+    pd.DataFrame(columns=list(cols)).to_excel(
+        writer, index=False, sheet_name="Shipments"
+    )
+    pd.DataFrame(
+        {"Column": list(cols), "What to enter": [help_map.get(c, "") for c in cols]}
+    ).to_excel(writer, index=False, sheet_name="Column guide")
+    ws = writer.sheets["Shipments"]
+    for i, name in enumerate(cols, start=1):
+      ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = max(
+          16, min(34, len(name) + 4)
+      )
+  return buf.getvalue()
+
 
 st.markdown(
     """
@@ -121,15 +169,20 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-logo_html = ""
-if os.path.exists("logo_2.jpg"):
+
+
+@st.cache_resource(show_spinner=False)
+def _logo_html():
+  if not os.path.exists("logo_2.jpg"):
+    return ""
   import base64
 
   with open("logo_2.jpg", "rb") as image_file:
     encoded_string = base64.b64encode(image_file.read()).decode()
-  logo_html = (
-      f"<img src='data:image/jpeg;base64,{encoded_string}' height='35'/>"
-  )
+  return f"<img src='data:image/jpeg;base64,{encoded_string}' height='35'/>"
+
+
+logo_html = _logo_html()
 
 st.markdown(
     f"<div class='top-banner'>{logo_html}<h1>🚢 RMS Procurement Shipment"
@@ -202,9 +255,9 @@ FOCUS_COLUMNS = [
     "MAH letter link",
 ]
 
-db_status_opts = db.get_dropdowns("status")
-db_mode_opts = db.get_dropdowns("mode")
-db_incoterm_opts = db.get_dropdowns("incoterm")
+db_status_opts = cached_dropdowns("status", _DBV)
+db_mode_opts = cached_dropdowns("mode", _DBV)
+db_incoterm_opts = cached_dropdowns("incoterm", _DBV)
 
 STATUS_OPTIONS = [""] + [opt["label"] for opt in db_status_opts]
 MODE_OPTIONS = [""] + sorted(
@@ -592,31 +645,35 @@ def edit_row_dialog(row_data, active_fy):
       "MAH Letter Link", value=row_data.get("MAH letter link", "")
   )
 
-  b_col1, b_col2 = st.columns([1, 1])
+  def _collect_row():
+    updated_row = {
+        "id": row_data.get("id"),
+        "fiscal_year": active_fy,
+        "PURCHASE ORDER": new_po,
+        "SUPPLIER /MANUFACTURER": new_supplier,
+        "Cargo description": new_desc,
+        "Invoice number": new_inv_no,
+        "Inv value": new_inv_val,
+        "Currency": new_curr,
+        "Quantity": row_data.get("Quantity", ""),
+        "Shipping mode": new_mode.upper() if new_mode else "",
+        "Incoterm": new_inco,
+        "Container Size": new_container,
+        "Carrier": new_carrier,
+        "BILL OF LADING OR AIRWAY BILL": new_bl,
+        "POD": new_pod,
+        "Current status": new_status,
+        "MAH letter link": new_mah,
+    }
+    updated_row.update(date_vals)
+    return updated_row
+
+  b_col1, b_col2, b_col3 = st.columns([1, 1, 1])
   with b_col1:
     if st.button(
         "💾 Save Shipment Details", type="primary", use_container_width=True
     ):
-      updated_row = {
-          "id": row_data.get("id"),
-          "fiscal_year": active_fy,
-          "PURCHASE ORDER": new_po,
-          "SUPPLIER /MANUFACTURER": new_supplier,
-          "Cargo description": new_desc,
-          "Invoice number": new_inv_no,
-          "Inv value": new_inv_val,
-          "Currency": new_curr,
-          "Quantity": row_data.get("Quantity", ""),
-          "Shipping mode": new_mode.upper() if new_mode else "",
-          "Incoterm": new_inco,
-          "Container Size": new_container,
-          "Carrier": new_carrier,
-          "BILL OF LADING OR AIRWAY BILL": new_bl,
-          "POD": new_pod,
-          "Current status": new_status,
-          "MAH letter link": new_mah,
-      }
-      updated_row.update(date_vals)
+      updated_row = _collect_row()
       db.upsert_shipment(updated_row)
       st.success("✅ Data saved!")
       st.cache_data.clear()
@@ -635,6 +692,71 @@ def edit_row_dialog(row_data, active_fy):
         use_container_width=True,
     ):
       st.session_state["trigger_dialog"] = ("take_action", row_data)
+      st.rerun()
+
+  with b_col3:
+    if st.button(
+        "➕ Save as New Shipment",
+        use_container_width=True,
+        help="Keeps the original untouched and adds these values as a new row.",
+    ):
+      new_row = _collect_row()
+      new_row.pop("id", None)
+      if not str(new_row.get("PURCHASE ORDER", "")).strip():
+        st.error("⚠️ PO Number is required to create a new shipment.")
+      else:
+        db.upsert_shipments_bulk([new_row], force_new=True)
+        st.success("✅ Saved as a new shipment!")
+        st.cache_data.clear()
+        if "shipments_aggrid_main" in st.session_state:
+          del st.session_state["shipments_aggrid_main"]
+        time.sleep(0.8)
+        st.rerun()
+
+
+# --- POPUP: DUPLICATE ROW (quick way to add a similar shipment) ---
+@st.dialog("📑 Duplicate Shipment", width="large")
+def duplicate_row_dialog(row_data, active_fy):
+  st.markdown(
+      f"Create new shipment(s) from PO `{row_data.get('PURCHASE ORDER', 'N/A')}`"
+      f" | Supplier: `{row_data.get('SUPPLIER /MANUFACTURER', 'N/A')}`"
+  )
+  d1, d2 = st.columns([1, 3])
+  with d1:
+    n_copies = st.number_input(
+        "Number of copies", min_value=1, max_value=50, value=1, step=1
+    )
+  with d2:
+    clear_tracking = st.checkbox(
+        "Clear shipment-specific fields on the copy (BL/AWB, invoice number,"
+        " actual dates, MAH link)",
+        value=True,
+    )
+  st.caption(
+      "The copies appear in the table straight away. Click any cell to edit it,"
+      " or tick the row to open the Advanced Editor."
+  )
+  c1, c2 = st.columns(2)
+  with c1:
+    if st.button("Cancel", use_container_width=True, key="dup_cancel"):
+      st.rerun()
+  with c2:
+    if st.button(
+        "📑 Create Copies",
+        type="primary",
+        use_container_width=True,
+        key="dup_go",
+    ):
+      made = db.duplicate_shipment(
+          int(row_data["id"]),
+          copies=int(n_copies),
+          clear_tracking=clear_tracking,
+      )
+      st.cache_data.clear()
+      if "shipments_aggrid_main" in st.session_state:
+        del st.session_state["shipments_aggrid_main"]
+      st.success(f"✅ {made} new shipment row(s) created.")
+      time.sleep(0.8)
       st.rerun()
 
 
@@ -699,11 +821,11 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
   if search_query:
     q = search_query.strip().lower()
     str_cols = f_df.select_dtypes(include=["object", "string"]).columns
-    search_mask = f_df[str_cols].apply(
-        lambda row: row.astype(str).str.lower().str.contains(q, regex=False).any(),
-        axis=1,
-    )
-    f_df = f_df[search_mask]
+    # One vectorised pass: join every text column per row, then a single search.
+    haystack = pd.Series("", index=f_df.index)
+    for _c in str_cols:
+      haystack = haystack + "\x1f" + f_df[_c].fillna("").astype(str)
+    f_df = f_df[haystack.str.lower().str.contains(q, regex=False)]
 
   # Dropdown Filters
   if f_mode:
@@ -736,10 +858,17 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
   with col_export:
     # EXPORT TO EXCEL BUTTON
     export_df = f_df.drop(columns=["id", "fiscal_year"], errors="ignore")
-    output_buffer = io.BytesIO()
-    with pd.ExcelWriter(output_buffer, engine="openpyxl") as writer:
-      export_df.to_excel(writer, index=False, sheet_name="Shipments")
-    excel_data = output_buffer.getvalue()
+    excel_data = build_export_bytes(
+        export_df,
+        (
+            selected_fy,
+            _DBV,
+            tuple(f_mode),
+            tuple(f_status),
+            tuple(f_carrier),
+            search_query or "",
+        ),
+    )
 
     st.download_button(
         label="📥 Export to Excel (.xlsx)",
@@ -769,20 +898,24 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
   st.markdown("</div>", unsafe_allow_html=True)
 
   # --- PRIMARY KPI MATH (CARGO VALUE WITH EUR STATIC RATE) ---
-  def calc_cargo_value_usd(row):
-    val = row.get("Inv value", 0)
-    curr = str(row.get("Currency", "")).strip().upper()
-    try:
-      val = float(val)
-    except:
-      val = 0.0
-    if curr in ["EURO", "EUR"]:
-      return val * 1.08  # Static exchange rate: 1 EUR = 1.08 USD
-    return val
+  if f_df.empty:
+    total_val_usd = 0.0
+  else:
+    _vals = pd.to_numeric(f_df["Inv value"], errors="coerce").fillna(0.0)
+    _is_eur = (
+        f_df["Currency"].fillna("").astype(str).str.strip().str.upper()
+    ).isin(["EURO", "EUR"])
+    # Static exchange rate: 1 EUR = 1.08 USD
+    total_val_usd = float(_vals.where(~_is_eur, _vals * 1.08).sum())
 
-  total_val_usd = (
-      f_df.apply(calc_cargo_value_usd, axis=1).sum() if not f_df.empty else 0.0
+  _modes = (
+      f_df["Shipping mode"].fillna("").astype(str).str.upper()
+      if "Shipping mode" in f_df.columns
+      else pd.Series(dtype=str)
   )
+  n_sea = int((_modes == "SEA").sum())
+  n_air = int((_modes == "AIR").sum())
+  n_road = int((_modes == "ROAD").sum())
 
   warn_mask = f_df.get("Action warning", pd.Series()).fillna("").str.strip() != ""
   warn_count = int(warn_mask.sum()) if not f_df.empty else 0
@@ -816,9 +949,7 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
     st.markdown(
         create_kpi_card(
             "Sea Freight 🚢",
-            len(f_df[f_df.get("Shipping mode").fillna("").str.upper() == "SEA"])
-            if not f_df.empty
-            else 0,
+            n_sea,
             "#e8f5e9",
             "#28a745",
             "#155724",
@@ -829,9 +960,7 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
     st.markdown(
         create_kpi_card(
             "Air Freight ✈️",
-            len(f_df[f_df.get("Shipping mode").fillna("").str.upper() == "AIR"])
-            if not f_df.empty
-            else 0,
+            n_air,
             "#e3f2fd",
             "#007bff",
             "#004085",
@@ -842,13 +971,7 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
     st.markdown(
         create_kpi_card(
             "Road Freight 🚛",
-            len(
-                f_df[
-                    f_df.get("Shipping mode").fillna("").str.upper() == "ROAD"
-                ]
-            )
-            if not f_df.empty
-            else 0,
+            n_road,
             "#fff3cd",
             "#ffc107",
             "#856404",
@@ -1042,7 +1165,7 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
 
   gb.configure_grid_options(
       singleClickEdit=True,
-      domLayout="autoHeight",
+      domLayout="normal",
       getRowStyle=dynamic_rowstyle,
       enableBrowserTooltips=True,
       animateRows=False,
@@ -1295,8 +1418,13 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
       },
   }
 
+  # Fixed-height grid: the header row stays visible while rows scroll inside it
+  # (and only the visible rows are drawn, which keeps big tables fast).
+  grid_h = int(min(640, max(240, 80 + 56 * len(display_df))))
+
   grid_response = AgGrid(
       display_df,
+      height=grid_h,
       gridOptions=gb.build(),
       update_mode=GridUpdateMode.VALUE_CHANGED
       | GridUpdateMode.SELECTION_CHANGED,
@@ -1311,52 +1439,54 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
 
   # --- INSTANT AUTO-SAVE & BACKGROUND COMPUTATION ENGINE ---
   edited_df = grid_response["data"]
-  if isinstance(edited_df, pd.DataFrame) and not edited_df.empty:
-    has_changes = False
+  if (
+      isinstance(edited_df, pd.DataFrame)
+      and not edited_df.empty
+      and "id" in edited_df.columns
+  ):
+    skip_cols = {"_selectedRowNodeInfo", "id", "fiscal_year"}
+    cmp_cols = [
+        c for c in edited_df.columns if c not in skip_cols and c in df.columns
+    ]
 
-    for idx, new_row in edited_df.iterrows():
-      row_id = new_row.get("id")
-      if pd.isna(row_id):
-        continue
-      row_id = int(row_id)
+    def _as_text(frame):
+      txt = frame.astype(object).where(frame.notna(), "").astype(str)
+      return txt.apply(lambda col: col.str.strip())
 
-      old_match = df[df["id"] == row_id]
-      if old_match.empty:
-        continue
-      old_row = old_match.iloc[0]
+    new_ids = pd.to_numeric(edited_df["id"], errors="coerce")
+    valid = new_ids.notna()
+    changed_rows = []
+    if valid.any():
+      edited_valid = edited_df.loc[valid].copy()
+      edited_valid.index = new_ids[valid].astype(int).values
+      edited_valid = edited_valid[~edited_valid.index.duplicated()]
 
-      row_changed = False
-      row_dict = {"id": row_id, "fiscal_year": selected_fy}
+      old_part = df.drop_duplicates("id").set_index("id")
+      common = edited_valid.index.intersection(old_part.index)
+      if len(common) and cmp_cols:
+        new_txt = _as_text(edited_valid.loc[common, cmp_cols])
+        for _c in cmp_cols:
+          if _c in ALL_DATE_COLS:
+            new_txt[_c] = new_txt[_c].map(db.norm_date_str)
+        old_txt = _as_text(old_part.loc[common, cmp_cols])
+        diff_mask = (new_txt != old_txt).any(axis=1)
+        changed_ids = list(common[diff_mask.values])
 
-      for col_name in edited_df.columns:
-        if col_name in ["_selectedRowNodeInfo", "id", "fiscal_year"]:
-          continue
-        new_val = (
-            str(new_row.get(col_name, "")).strip()
-            if pd.notna(new_row.get(col_name, ""))
-            else ""
-        )
-        old_val = (
-            str(old_row.get(col_name, "")).strip()
-            if pd.notna(old_row.get(col_name, ""))
-            else ""
-        )
+        for rid in changed_ids:
+          new_row = edited_valid.loc[rid]
+          row_dict = {"id": int(rid), "fiscal_year": selected_fy}
+          for col_name in edited_df.columns:
+            if col_name in skip_cols:
+              continue
+            raw = new_row.get(col_name, "")
+            new_val = str(raw).strip() if pd.notna(raw) else ""
+            if col_name in ALL_DATE_COLS:
+              new_val = db.norm_date_str(new_val)
+            row_dict[col_name] = new_val
+          changed_rows.append(row_dict)
 
-        if col_name in ALL_DATE_COLS:
-          parsed_dt = pd.to_datetime(new_val, errors="coerce")
-          new_val = (
-              parsed_dt.strftime("%Y-%m-%d") if pd.notna(parsed_dt) else ""
-          )
-
-        row_dict[col_name] = new_val
-        if new_val != old_val:
-          row_changed = True
-
-      if row_changed:
-        db.upsert_shipment(row_dict, changed_by="Officer")
-        has_changes = True
-
-    if has_changes:
+    if changed_rows:
+      db.upsert_shipments_bulk(changed_rows, changed_by="Officer")
       st.cache_data.clear()
       st.rerun()
 
@@ -1369,6 +1499,7 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
     selected_data = selected_rows[0]
 
   queued_dlg = st.session_state.pop("trigger_dialog", None)
+  bar_dialog_opened = False
 
   if selected_data:
     row_id_sel = selected_data.get("id")
@@ -1382,22 +1513,29 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
 
     with action_container_top.container():
       st.markdown("### 🛠️ Selected Shipment Actions")
-      b1, b2, b3, _ = st.columns([2.5, 3.2, 2, 4.3])
+      b1, b2, b3, b4, _ = st.columns([2.5, 3.2, 2, 2.2, 2.1])
       with b1:
         if st.button(
             "⚡ Take Action (Email & Files)",
             type="primary",
             use_container_width=True,
         ):
+          bar_dialog_opened = True
           take_action_dialog(selected_data)
       with b2:
         if st.button(
             "✏️ Edit Selected Row (Advanced Editor)", use_container_width=True
         ):
+          bar_dialog_opened = True
           edit_row_dialog(selected_data, selected_fy)
       with b3:
         if st.button("🗑️ Delete Row", use_container_width=True):
+          bar_dialog_opened = True
           delete_row_dialog(selected_data)
+      with b4:
+        if st.button("📑 Duplicate Row", use_container_width=True):
+          bar_dialog_opened = True
+          duplicate_row_dialog(selected_data, selected_fy)
 
     if queued_dlg:
       dlg_type, dlg_data = queued_dlg
@@ -1407,7 +1545,7 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
         edit_row_dialog(dlg_data, selected_fy)
       elif dlg_type == "delete":
         delete_row_dialog(dlg_data)
-    else:
+    elif not bar_dialog_opened:
       # Automatically open Advanced Editor on checkbox selection
       edit_row_dialog(selected_data, selected_fy)
   elif queued_dlg:
@@ -1422,7 +1560,7 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
 
 # --- TRACKER TAB RENDER ---
 with tab_dash:
-  df = db.load_data(selected_fy)
+  df = cached_load(selected_fy, _DBV)
   # --- SEARCH & FILTERS ---
   f1, f2, f3, f4 = st.columns([2.5, 1, 1, 1])
   with f1:
@@ -1490,64 +1628,202 @@ with tab_emails:
             st.rerun()
 
 with tab_upload:
-  with st.form("upload_form", clear_on_submit=True):
-    uploaded_file = st.file_uploader(
-        "Upload Excel File (Shipment Tracker.xlsx)", type=["xlsx", "xls"]
+  _import_msg = st.session_state.pop("import_msg", None)
+  if _import_msg:
+    st.success(_import_msg)
+
+  tmpl_cols = db.template_columns()
+
+  def run_import(import_df, update_existing):
+    """Shared by all three add-data modes. Returns True on success."""
+    rows, skipped, unmatched = db.prepare_import_rows(
+        import_df, selected_fy, STATUS_OPTIONS
     )
-    if (
-        st.form_submit_button("Process and Sync Data", type="primary")
-        and uploaded_file
+    if not rows:
+      st.error(
+          "No valid rows found. Make sure there is a **PURCHASE ORDER** column"
+          " (or first column) with values."
+      )
+      return False
+    created, updated = db.upsert_shipments_bulk(
+        rows, force_new=not update_existing
+    )
+    db.log_action(
+        f"Bulk add to {selected_fy}: {created} new, {updated} updated"
+    )
+    msg = (
+        f"Success! {created} new and {updated} updated shipment records synced"
+        f" into {selected_fy} with recalculated deadlines and action warnings."
+    )
+    if skipped:
+      msg += f" ({skipped} rows without a PO were skipped.)"
+    if unmatched:
+      msg += " Ignored columns: " + ", ".join(f"`{c}`" for c in unmatched[:8])
+    st.session_state["import_msg"] = msg
+    st.cache_data.clear()
+    return True
+
+  st.subheader(f"📥 Add Shipments — {selected_fy}")
+  st.markdown(
+      "Upload an Excel sheet, paste rows copied from Excel, or type straight"
+      f" into a table to add or update shipments in **{selected_fy}**."
+  )
+  st.info(
+      "**Column order:** "
+      + " → ".join(tmpl_cols)
+      + "\n\nOnly **PURCHASE ORDER** is required; the rest are optional. Sheets"
+      " with other headers (e.g. 'PO', 'Vendor', 'AWB', 'Qty') are matched"
+      " automatically, and the computed columns (days to clear, delays, action"
+      " warning) are calculated for you."
+  )
+
+  tp1, tp2 = st.columns([1, 3])
+  with tp1:
+    st.download_button(
+        "⬇️ Download Excel Template",
+        data=build_template_bytes(tuple(tmpl_cols), db.COLUMN_HELP_UI()),
+        file_name="Shipment_Import_Template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+    )
+  with tp2:
+    with st.expander("📋 See what each column means"):
+      st.dataframe(
+          pd.DataFrame({
+              "Column": tmpl_cols,
+              "What to enter": [db.COLUMN_HELP_UI().get(c, "") for c in tmpl_cols],
+          }),
+          hide_index=True,
+          use_container_width=True,
+      )
+
+  add_mode = st.radio(
+      "How would you like to add shipments?",
+      ["📁 Upload Excel", "📋 Paste from Excel", "⌨️ Type in a table"],
+      horizontal=True,
+      key="add_mode",
+  )
+  update_existing = st.checkbox(
+      "Update existing shipments when the same PO + BL/AWB already exists"
+      " (untick to always add new rows)",
+      value=True,
+      key="update_existing",
+  )
+
+  if add_mode == "📁 Upload Excel":
+    with st.form("upload_form", clear_on_submit=True):
+      uploaded_file = st.file_uploader(
+          "Upload Excel File (Shipment Tracker.xlsx)", type=["xlsx", "xls"]
+      )
+      if (
+          st.form_submit_button("Process and Sync Data", type="primary")
+          and uploaded_file
+      ):
+        with st.spinner("Processing & Calculating Formulas..."):
+          try:
+            import_df = pd.read_excel(uploaded_file)
+            if run_import(import_df, update_existing):
+              time.sleep(1)
+              st.rerun()
+          except Exception as e:
+            st.error(f"Error processing file: {e}")
+
+  elif add_mode == "📋 Paste from Excel":
+    import csv
+
+    st.caption(
+        "Copy cells in Excel (Ctrl+C) and paste below (Ctrl+V). Include the"
+        " header row, or paste only data in the column order shown above."
+    )
+    pasted = st.text_area(
+        "Paste rows here",
+        height=220,
+        key="paste_box",
+        label_visibility="collapsed",
+        placeholder="PO\tSupplier\tCargo description\t...",
+    )
+    if pasted.strip():
+      try:
+        grid_rows = [
+            r for r in csv.reader(io.StringIO(pasted), delimiter="\t") if any(c.strip() for c in r)
+        ]
+        width = max(len(r) for r in grid_rows)
+        grid_rows = [r + [""] * (width - len(r)) for r in grid_rows]
+        if db.headers_look_known(grid_rows[0]):
+          paste_df = pd.DataFrame(grid_rows[1:], columns=grid_rows[0])
+        else:
+          names = [
+              tmpl_cols[i] if i < len(tmpl_cols) else f"Extra {i + 1}"
+              for i in range(width)
+          ]
+          paste_df = pd.DataFrame(grid_rows, columns=names)
+        st.dataframe(paste_df, hide_index=True, use_container_width=True, height=240)
+        st.caption(f"{len(paste_df)} row(s) detected.")
+        if st.button(
+            f"➕ Add {len(paste_df)} shipment(s) to {selected_fy}",
+            type="primary",
+            key="paste_go",
+        ):
+          if run_import(paste_df, update_existing):
+            st.session_state.pop("paste_box", None)
+            st.rerun()
+      except Exception as e:
+        st.error(f"Could not read the pasted data: {e}")
+
+  else:  # Type in a table
+    st.caption(
+        "Fill in the rows below (use the + at the bottom to add more, or paste"
+        " cells straight into the table). Blank rows are ignored."
+    )
+    date_cfg = {
+        c: st.column_config.DateColumn(c, format="YYYY-MM-DD")
+        for c in db.DATE_UI_COLS
+        if c in tmpl_cols
+    }
+    type_cfg = {
+        **date_cfg,
+        db.RENAME_MAP["inv_value"]: st.column_config.NumberColumn(
+            db.RENAME_MAP["inv_value"], min_value=0.0
+        ),
+        db.RENAME_MAP["shipping_mode"]: st.column_config.SelectboxColumn(
+            db.RENAME_MAP["shipping_mode"], options=MODE_OPTIONS[1:]
+        ),
+        db.RENAME_MAP["incoterm"]: st.column_config.SelectboxColumn(
+            db.RENAME_MAP["incoterm"], options=INCOTERM_OPTIONS[1:]
+        ),
+        db.RENAME_MAP["current_status"]: st.column_config.SelectboxColumn(
+            db.RENAME_MAP["current_status"], options=STATUS_OPTIONS[1:]
+        ),
+    }
+    blank = {}
+    for c in tmpl_cols:
+      if c in db.DATE_UI_COLS:
+        blank[c] = pd.Series([pd.NaT] * 5, dtype="datetime64[ns]")
+      elif c == db.RENAME_MAP["inv_value"]:
+        blank[c] = pd.Series([None] * 5, dtype="float64")
+      else:
+        blank[c] = pd.Series([None] * 5, dtype="object")
+    typed_df = st.data_editor(
+        pd.DataFrame(blank),
+        num_rows="dynamic",
+        hide_index=True,
+        use_container_width=True,
+        column_config=type_cfg,
+        key="type_table",
+    )
+    po_col_name = db.RENAME_MAP["po_number"]
+    n_ready = int(
+        typed_df[po_col_name].fillna("").astype(str).str.strip().ne("").sum()
+    )
+    if st.button(
+        f"➕ Add {n_ready} shipment(s) to {selected_fy}",
+        type="primary",
+        key="type_go",
+        disabled=n_ready == 0,
     ):
-      with st.spinner("Processing & Calculating Formulas..."):
-        try:
-          import_df = pd.read_excel(uploaded_file)
-          import_df.columns = (
-              import_df.columns.str.strip().str.replace("\n", " ")
-          )
-          rows_to_insert = []
-
-          for index, row in import_df.iterrows():
-            raw_po = str(row.get("PURCHASE ORDER", "")).strip()
-            if not raw_po or raw_po.lower() == "nan":
-              continue
-
-            row_dict = {
-                "fiscal_year": selected_fy,
-                "PURCHASE ORDER": raw_po,
-                "Current status": "In Transit",
-            }
-
-            for ui_col in db.RENAME_MAP.values():
-              if ui_col in ["PURCHASE ORDER", "Current status"]:
-                continue
-              val = row.get(ui_col, "")
-              if pd.isna(val):
-                val = ""
-              if ui_col in ALL_DATE_COLS:
-                dt = pd.to_datetime(str(val).strip(), errors="coerce")
-                val = dt.strftime("%Y-%m-%d") if pd.notna(dt) else ""
-              elif ui_col == "Inv value":
-                try:
-                  val = float(val)
-                except:
-                  val = 0.0
-              else:
-                val = str(val).strip()
-              row_dict[ui_col] = val
-
-            rows_to_insert.append(row_dict)
-
-          if rows_to_insert:
-            db.upsert_shipments_bulk(rows_to_insert)
-          st.success(
-              f"Success! {len(rows_to_insert)} shipment records synced into"
-              " SQLite database with recalculated deadlines and action"
-              " warnings."
-          )
-          time.sleep(1)
-          st.rerun()
-        except Exception as e:
-          st.error(f"Error processing file: {e}")
+      if run_import(typed_df, update_existing):
+        st.session_state.pop("type_table", None)
+        st.rerun()
 
 with tab_logs:
   st.subheader("📝 Edit Trail & Activity Logs")
