@@ -168,7 +168,23 @@ RENAME_MAP = {
     'delays': 'delays',
     'action_warning': 'Action warning',
     'mah_letter_link': 'MAH letter link',
+    'import_license_stage': 'Import license stage',
+    'missing_cargo_doc': 'Missing cargo document',
+    'cargo_dispatched': 'Cargo dispatched',
+    'clearing_agent': 'Clearing agent',
+    'arrival_notice_ready': 'Arrival notice ready',
+    'actual_kigali_arrival': 'Actual arrival in Kigali',
+    'remarks': 'Remarks',
+    'reason_for_delay': 'Reason for delay',
+    'responsible_staff': 'Responsible staff',
 }
+
+# Extra tracker fields kept as plain text columns (added automatically).
+EXTRA_DB_COLUMNS = [
+    'import_license_stage', 'missing_cargo_doc', 'cargo_dispatched',
+    'clearing_agent', 'arrival_notice_ready', 'actual_kigali_arrival',
+    'remarks', 'reason_for_delay', 'responsible_staff',
+]
 
 
 def get_conn():
@@ -256,6 +272,23 @@ def init_db():
         deleted_by TEXT,
         deleted_at TEXT
     )""")
+
+  # 1b. Extra tracker columns + one-off migrations
+  existing = {row[1] for row in c.execute("PRAGMA table_info(shipments)")}
+  for col in EXTRA_DB_COLUMNS:
+    if col not in existing:
+      c.execute(f'ALTER TABLE shipments ADD COLUMN "{col}" TEXT')
+  c.execute(
+      "CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT)"
+  )
+  conn.commit()
+  if not c.execute(
+      "SELECT 1 FROM app_meta WHERE key = 'delay_sign_v2'"
+  ).fetchone():
+    recompute_all_formulas(conn)
+    c.execute("INSERT INTO app_meta (key, value) VALUES ('delay_sign_v2', ?)",
+              (datetime.now().strftime("%Y-%m-%d %H:%M:%S"),))
+    conn.commit()
 
   # 2. Dropdowns Table
   c.execute("""CREATE TABLE IF NOT EXISTS dropdowns (
@@ -377,6 +410,32 @@ def init_db():
 
 
 # --- DROPDOWNS MANAGEMENT ---
+def recompute_all_formulas(conn=None):
+  """Refresh deadline / delays / days-to-clear / warnings for every shipment.
+
+  Delays and warnings depend on today's date, so this runs once a day at
+  start-up (and once after the delay-sign fix).
+  """
+  own = conn is None
+  if own:
+    conn = get_conn()
+  c = conn.cursor()
+  c.execute("SELECT * FROM shipments")
+  names = [x[0] for x in c.description]
+  for rec in c.fetchall():
+    row = dict(zip(names, rec))
+    calc = compute_formulas(dict(row))
+    c.execute(
+        "UPDATE shipments SET days_to_clear = ?, clearance_deadline = ?,"
+        " delays = ?, action_warning = ? WHERE id = ?",
+        (calc["days_to_clear"], calc["clearance_deadline"], calc["delays"],
+         calc["action_warning"], row["id"]),
+    )
+  conn.commit()
+  if own:
+    conn.close()
+
+
 def get_dropdowns(category):
   conn = get_conn()
   c = conn.cursor()
@@ -684,11 +743,12 @@ def compute_formulas(row_data):
     deadline_d = None
     clearance_deadline = ""
 
-  # Delays = Deadline to clear the shipment - Actual arrival at RMS
+  # Delays = Actual arrival at RMS - Deadline (positive = late, same as the
+  # Excel tracker). Open shipments are measured against today.
   if deadline_d and rms_arr_d:
-    delays_val = (deadline_d - rms_arr_d).days
+    delays_val = (rms_arr_d - deadline_d).days
   elif deadline_d and not rms_arr_d:
-    delays_val = (deadline_d - today).days
+    delays_val = (today - deadline_d).days
   else:
     delays_val = None
 
@@ -835,49 +895,148 @@ def delete_shipment(db_id, user_name="Officer"):
   log_action(f"Shipment ID {db_id} deleted by {user_name}")
 
 
-def upsert_shipments_bulk(rows_data, changed_by="Officer", force_new=False):
+_PLACEHOLDERS = {"", "tba", "pending", "na", "n/a", "none", "nan", "null"}
+
+
+def _is_placeholder(val):
+  return str("" if val is None else val).strip().lower() in _PLACEHOLDERS
+
+
+def _norm_key(val):
+  return " ".join(str("" if val is None else val).split()).upper()
+
+
+def pick_existing(cands, bl, inv):
+  """Choose which existing row (same PO + fiscal year) an upload row updates.
+
+  cands: list of (id, bl_awb, invoice_no) that are not already claimed by an
+  earlier row of the same upload. Returns an id, or None (= add as new row).
+  1) same real BL/AWB
+  2) same real invoice no. (a corrected BL on the same invoice is an update)
+  3) BL is still a placeholder (TBA/pending/blank) on either side, the
+     invoice does not contradict, and exactly one candidate is left.
+  Anything ambiguous is added as new, never guessed.
+  """
+  bl_n, inv_n = _norm_key(bl), _norm_key(inv)
+  if not _is_placeholder(bl_n):
+    for cid, cbl, _ in cands:
+      if _norm_key(cbl) == bl_n:
+        return cid
+  if not _is_placeholder(inv_n):
+    hits = [c for c in cands if _norm_key(c[2]) == inv_n]
+    if len(hits) == 1:
+      return hits[0][0]
+    if hits and _is_placeholder(bl_n):
+      return hits[0][0]
+  # a candidate whose invoice is real and different is another shipment
+  compat = [
+      c for c in cands
+      if (_is_placeholder(bl_n) or _is_placeholder(c[1]))
+      and (
+          _is_placeholder(inv_n)
+          or _is_placeholder(c[2])
+          or _norm_key(c[2]) == inv_n
+      )
+  ]
+  if len(compat) == 1:
+    return compat[0][0]
+  return None
+
+
+def _find_existing(c, db_row, claimed):
+  # PO text is compared ignoring extra spaces / line breaks (stored POs often
+  # contain them), so "A AND  B" and "A AND B" are the same PO.
+  want = _norm_key(db_row.get("po_number", ""))
+  c.execute(
+      "SELECT id, bl_awb, invoice_no, po_number FROM shipments WHERE"
+      " fiscal_year = ? ORDER BY COALESCE(is_deleted, 0), id",
+      (db_row["fiscal_year"],),
+  )
+  cands = [
+      r[:3] for r in c.fetchall()
+      if r[0] not in claimed and _norm_key(r[3]) == want
+  ]
+  if not cands:
+    return None
+  return pick_existing(cands, db_row.get("bl_awb"), db_row.get("invoice_no"))
+
+
+def upsert_shipments_bulk(
+    rows_data, changed_by="Officer", force_new=False, skip_blank=False
+):
   """Insert/update many shipments in one transaction.
 
   force_new=True always inserts a brand-new row (used for duplicates and for
-  "add as new" imports). Returns (created_count, updated_count).
+  "add as new" imports). skip_blank=True (bulk imports) never overwrites an
+  existing value with an empty one, so partial sheets are safe.
+  Returns (created_count, updated_count).
   """
   conn = get_conn()
   c = conn.cursor()
   reverse_map = {v: k for k, v in get_rename_map().items()}
   created = updated = 0
+  claimed = set()  # existing rows already updated by this upload
+
+  def _translate(row):
+    out = {}
+    for ui_col, val in row.items():
+      if ui_col in reverse_map:
+        out[reverse_map[ui_col]] = val
+    return out
 
   try:
     for row_data in rows_data:
-      row_data = compute_formulas(row_data)
-      db_row = {"fiscal_year": row_data["fiscal_year"], "is_deleted": 0}
+      row_data = dict(row_data)
+      fy = row_data["fiscal_year"]
+      probe = {"fiscal_year": fy, **_translate(row_data)}
 
-      for ui_col, val in row_data.items():
-        if ui_col in reverse_map:
-          db_row[reverse_map[ui_col]] = val
+      old_dict = None
+      if not force_new:
+        if row_data.get("id"):
+          c.execute("SELECT * FROM shipments WHERE id = ?", (row_data["id"],))
+        else:
+          found = _find_existing(c, probe, claimed)
+          c.execute("SELECT * FROM shipments WHERE id = ?", (found,))
+        old_row = c.fetchone()
+        if old_row:
+          old_dict = dict(zip([d[0] for d in c.description], old_row))
+          claimed.add(old_dict["id"])
+
+      if skip_blank and old_dict:
+        db_row = {
+            k: v for k, v in probe.items()
+            if k in ("fiscal_year",) or str("" if v is None else v).strip() != ""
+        }
+        db_row["is_deleted"] = 0
+        merged = {**old_dict, **db_row}
+        if "clearance_deadline" not in db_row:
+          # an auto deadline (doc date + 2 days) must follow a new doc date
+          od = to_date(old_dict.get("doc_sharing_date"))
+          odl = to_date(old_dict.get("clearance_deadline"))
+          if odl is None or (od and odl == od + timedelta(days=2)):
+            merged["clearance_deadline"] = ""
+        calc = compute_formulas(merged)
+        for k in ("days_to_clear", "clearance_deadline", "delays",
+                  "action_warning"):
+          db_row[k] = calc[k]
+      else:
+        calc = compute_formulas(row_data)
+        db_row = {"fiscal_year": fy, "is_deleted": 0, **_translate(calc)}
+        if skip_blank:
+          db_row = {
+              k: v for k, v in db_row.items()
+              if v is not None and (str(v).strip() != "" or k == "fiscal_year")
+              or k in ("days_to_clear", "delays", "action_warning",
+                       "clearance_deadline")
+          }
+          if not str(db_row.get("current_status", "")).strip():
+            db_row["current_status"] = "In Transit"
 
       po = db_row.get("po_number", "")
-      bl = db_row.get("bl_awb", "")
 
       # Normalize shipping mode case for DB write
       if "shipping_mode" in db_row and db_row["shipping_mode"]:
         db_row["shipping_mode"] = str(db_row["shipping_mode"]).strip().upper()
-
-      old_row = None
-      if not force_new:
-        # Match by ID first, then PO (single query returns the old values too)
-        if "id" in row_data and row_data["id"]:
-          c.execute("SELECT * FROM shipments WHERE id = ?", (row_data["id"],))
-        else:
-          c.execute(
-              "SELECT * FROM shipments WHERE po_number = ? AND (bl_awb = ? OR"
-              " bl_awb IS NULL) AND fiscal_year = ?",
-              (po, bl, db_row["fiscal_year"]),
-          )
-        old_row = c.fetchone()
-        if old_row:
-          col_names = [d[0] for d in c.description]
-          old_dict = dict(zip(col_names, old_row))
-          s_id = old_dict["id"]
 
       if force_new:
         db_row.pop("id", None)
@@ -885,7 +1044,8 @@ def upsert_shipments_bulk(rows_data, changed_by="Officer", force_new=False):
       cols = list(db_row.keys())
       vals = [db_row[k] for k in cols]
 
-      if old_row:
+      if old_dict:
+        s_id = old_dict["id"]
         set_clause = ", ".join([f'"{col}" = ?' for col in cols])
         vals.append(s_id)
         c.execute(f"UPDATE shipments SET {set_clause} WHERE id = ?", vals)
@@ -893,7 +1053,9 @@ def upsert_shipments_bulk(rows_data, changed_by="Officer", force_new=False):
 
         for col_k, new_v in db_row.items():
           old_v = old_dict.get(col_k, "")
-          if str(old_v).strip() != str(new_v).strip():
+          old_s = "" if old_v is None else str(old_v).strip()
+          new_s = "" if new_v is None else str(new_v).strip()
+          if old_s != new_s:
             ui_header = RENAME_MAP.get(col_k, col_k)
             log_row_change(s_id, ui_header, old_v, new_v, changed_by, conn=conn)
       else:
@@ -971,6 +1133,7 @@ DATE_UI_COLS = [
         "actual_rms_arrival",
         "doc_sharing_date",
         "clearance_deadline",
+        "actual_kigali_arrival",
     )
 ]
 
@@ -1002,6 +1165,11 @@ _HEADER_ALIASES = {
     "status": "current_status",
     "deadline": "clearance_deadline", "clearancedeadline": "clearance_deadline",
     "mahletter": "mah_letter_link", "mahlink": "mah_letter_link",
+    "comments": "remarks", "additionalremarks": "remarks", "notes": "remarks",
+    "forwarder": "clearing_agent", "importlicense": "import_license_stage",
+    "licensestage": "import_license_stage", "dispatched": "cargo_dispatched",
+    "arrivalnotice": "arrival_notice_ready",
+    "missingdocument": "missing_cargo_doc", "staff": "responsible_staff",
 }
 
 # What the template / "column meaning" panel shows (input columns only).
@@ -1011,6 +1179,9 @@ TEMPLATE_DB_KEYS = [
     "carrier", "bl_awb", "pod", "eta_pod", "actual_port_arrival",
     "cargo_eta_rms", "actual_rms_arrival", "doc_sharing_date",
     "current_status", "clearance_deadline", "mah_letter_link",
+    "import_license_stage", "missing_cargo_doc", "cargo_dispatched",
+    "clearing_agent", "arrival_notice_ready", "actual_kigali_arrival",
+    "remarks",
 ]
 COLUMN_HELP = {
     "po_number": "Purchase order number (REQUIRED - rows without it are skipped).",
@@ -1034,6 +1205,13 @@ COLUMN_HELP = {
     "current_status": "One of your status options; blank = In Transit.",
     "clearance_deadline": "Optional manual deadline; blank = doc sharing date + 2 days.",
     "mah_letter_link": "Link to the MAH letter.",
+    "import_license_stage": "Not started, Drafted, Submitted, Approved, Rejected, Queried ...",
+    "missing_cargo_doc": "Which cargo document is still missing (blank = none).",
+    "cargo_dispatched": "Yes / No - has the supplier dispatched the cargo?",
+    "clearing_agent": "Clearing agent or forwarder handling the shipment.",
+    "arrival_notice_ready": "Yes / No - is the arrival notice ready?",
+    "actual_kigali_arrival": "Actual arrival in Kigali (YYYY-MM-DD).",
+    "remarks": "Free-text notes (freight quote status, issues, next step).",
 }
 
 
@@ -1071,10 +1249,13 @@ def headers_look_known(values):
   return len(match_columns([v for v in values if str(v).strip()])) >= 2
 
 
-def prepare_import_rows(import_df, fiscal_year, status_options=None):
+def prepare_import_rows(import_df, fiscal_year, status_options=None, sparse=False):
   """Turn any sheet-like DataFrame into row dicts ready for upsert.
 
   Returns (rows, skipped_blank_po, unmatched_headers).
+  sparse=True: columns missing from the sheet are left out of each row (so an
+  update never touches them) and unusable status / value cells become blank
+  instead of "In Transit" / 0.
   """
   import_df = import_df.copy()
   import_df.columns = [str(c).strip().replace("\n", " ") for c in import_df.columns]
@@ -1102,6 +1283,8 @@ def prepare_import_rows(import_df, fiscal_year, status_options=None):
       if ui_col == po_col:
         continue
       src = ui_to_src.get(ui_col)
+      if sparse and not src:
+        continue
       val = rec.get(src, "") if src else ""
       if ui_col in DATE_UI_COLS:
         val = norm_date_str(val)
@@ -1109,11 +1292,13 @@ def prepare_import_rows(import_df, fiscal_year, status_options=None):
         try:
           val = float(str(val).replace(",", "").replace("$", "").strip())
           if pd.isna(val):
-            val = 0.0
+            val = "" if sparse else 0.0
         except (TypeError, ValueError):
-          val = 0.0
+          val = "" if sparse else 0.0
       elif ui_col == RENAME_MAP["current_status"]:
-        val = status_lookup.get(clean_text(val).lower(), "In Transit")
+        val = status_lookup.get(
+            clean_text(val).lower(), "" if sparse else "In Transit"
+        )
       else:
         val = clean_text(val)
       row[ui_col] = val

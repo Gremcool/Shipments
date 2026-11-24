@@ -33,11 +33,34 @@ st.set_page_config(
 def _boot(day):
   """Schema/index setup + daily backup run once per day, not on every click."""
   db.init_db()
+  migration = None
+  try:
+    import seed  # one-time, non-destructive merge of the tracker data
+
+    migration = seed.apply_pending()
+  except Exception as exc:  # never block the app
+    migration = {"error": str(exc)}
+  db.recompute_all_formulas()  # delays / warnings depend on today's date
   db.auto_backup_daily()
-  return True
+  return migration or {}
 
 
-_boot(datetime.now().strftime("%Y%m%d"))
+_migration = _boot(datetime.now().strftime("%Y%m%d"))
+if _migration and not st.session_state.get("_mig_seen"):
+  st.session_state["_mig_seen"] = True
+  if _migration.get("error"):
+    st.error(
+        "Data migration could not be applied and was rolled back - no data was"
+        f" changed. Backup: {_migration.get('backup', '')}. Details: {_migration['error']}"
+    )
+  elif "updated_rows" in _migration:
+    st.success(
+        "✅ Tracker data merged into your database (one-time): "
+        f"{_migration['updated_rows']} shipments updated, {_migration['added']} added, "
+        f"{_migration['history_added']} historic shipments loaded"
+        + (f", {_migration['cells_kept']} newer values of yours kept" if _migration["cells_kept"] else "")
+        + f". Full backup taken first: {_migration['backup']}. Every change is in the Edit Trail."
+    )
 _DBV = db.db_version()  # changes whenever anything is written to the database
 
 
@@ -171,6 +194,87 @@ st.markdown(
 
 
 
+st.markdown(
+    """
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        html, body, [class*="css"], .stMarkdown, button, input, textarea, select {
+            font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif !important;
+        }
+        .stApp { background: linear-gradient(180deg, #eef4f8 0%, #f7f9fb 40%, #f4f7f6 100%); }
+        .block-container { max-width: 1700px; padding-top: 0.8rem !important; background: transparent !important; }
+
+        /* HERO BANNER */
+        .top-banner {
+            background: linear-gradient(110deg, #0b3c5d 0%, #117a8b 55%, #1d70b8 100%) !important;
+            padding: 16px 24px !important; border-radius: 16px !important;
+            display: flex; align-items: center; justify-content: space-between;
+            box-shadow: 0 8px 24px rgba(11, 60, 93, 0.25) !important; margin-bottom: 14px !important;
+            position: relative; overflow: hidden;
+        }
+        .top-banner::after {
+            content: ""; position: absolute; right: -60px; top: -80px; width: 260px; height: 260px;
+            border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,0.18), rgba(255,255,255,0) 70%);
+        }
+        .tb-left { display: flex; align-items: center; gap: 14px; }
+        .top-banner h1 { font-size: 24px !important; font-weight: 800 !important; letter-spacing: 0.2px !important; line-height: 1.15; }
+        .tb-sub { color: rgba(255,255,255,0.82); font-size: 13px; margin-top: 3px; }
+        .tb-right {
+            color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 0.8px;
+            background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.25);
+            padding: 7px 14px; border-radius: 999px; z-index: 1; white-space: nowrap;
+        }
+        .live-dot {
+            display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #5cff9d;
+            margin-right: 8px; box-shadow: 0 0 0 0 rgba(92,255,157,0.7); animation: pulse 1.8s infinite;
+        }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(92,255,157,0.65);} 70% { box-shadow: 0 0 0 9px rgba(92,255,157,0);} 100% { box-shadow: 0 0 0 0 rgba(92,255,157,0);} }
+
+        /* KPI CARDS */
+        .eff-card {
+            background: #ffffff !important; border: 1px solid #e6ecf1 !important; border-top: 4px solid var(--accent, #117a8b) !important;
+            border-radius: 14px !important; height: 86px !important; padding: 10px 14px !important;
+            flex-direction: row !important; align-items: center !important; gap: 12px;
+            box-shadow: 0 2px 10px rgba(16, 42, 67, 0.06) !important; transition: transform .18s ease, box-shadow .18s ease;
+        }
+        .eff-card:hover { transform: translateY(-3px); box-shadow: 0 10px 22px rgba(16, 42, 67, 0.13) !important; }
+        .eff-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; flex: 0 0 44px; }
+        .eff-text { min-width: 0; }
+        .eff-title { font-size: 10.5px !important; color: #5b6b7a !important; letter-spacing: 0.6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .eff-value { font-size: 23px !important; font-weight: 800 !important; letter-spacing: -0.3px; }
+
+        /* PIPELINE STRIP */
+        .pipe-wrap { background: #fff; border: 1px solid #e6ecf1; border-radius: 14px; padding: 12px 16px; margin: 8px 0 12px 0; box-shadow: 0 2px 10px rgba(16,42,67,0.05); }
+        .pipe-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px; }
+        .pipe-title { font-size: 12px; font-weight: 800; color: #34495e; text-transform: uppercase; letter-spacing: 0.7px; }
+        .chip { display: inline-block; font-size: 11.5px; font-weight: 700; padding: 4px 11px; border-radius: 999px; margin-left: 6px; }
+        .chip.warn { background: #fff4e5; color: #b45309; border: 1px solid #fcd9a8; }
+        .chip.bad { background: #ffebee; color: #b71c1c; border: 1px solid #f5b5bb; }
+        .chip.good { background: #e8f5e9; color: #1b5e20; border: 1px solid #b5dfb8; }
+        .pipe-bar { display: flex; height: 16px; border-radius: 999px; overflow: hidden; background: #edf1f5; }
+        .pipe-seg { height: 100%; transition: flex .4s ease; }
+        .pipe-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 9px; font-size: 12px; color: #455a64; }
+        .pipe-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+        /* TABS, INPUTS, BUTTONS */
+        div[data-baseweb="tab-list"] { background: #ffffff !important; border: 1px solid #e0ebef; border-radius: 14px !important; padding: 6px 8px !important; box-shadow: 0 2px 8px rgba(16,42,67,0.05); }
+        div[data-baseweb="tab"] { font-weight: 600 !important; border-radius: 10px !important; padding: 9px 14px !important; transition: background .15s ease; }
+        div[data-baseweb="tab"]:hover { background-color: #eaf6f8 !important; }
+        div[data-baseweb="tab"][aria-selected="true"] { background: linear-gradient(90deg, #117a8b 0%, #0056b3 100%) !important; border: none !important; box-shadow: 0 4px 10px rgba(0,86,179,0.3) !important; }
+        div[data-baseweb="tab"][aria-selected="true"] p { color: #ffffff !important; }
+        div[data-baseweb="select"] > div, .stTextInput input, .stTextArea textarea { border-radius: 10px !important; }
+        .stButton > button, .stDownloadButton > button { border-radius: 10px !important; font-weight: 700 !important; transition: transform .12s ease, box-shadow .12s ease; }
+        .stButton > button:hover, .stDownloadButton > button:hover { transform: translateY(-1px); box-shadow: 0 5px 12px rgba(0,0,0,0.12); }
+        .stButton > button[kind="primary"] { background: linear-gradient(90deg, #117a8b 0%, #0056b3 100%) !important; border: none !important; }
+        div[data-testid="stExpander"] { border-radius: 14px !important; border: 1px solid #e6ecf1 !important; background: #ffffff; box-shadow: 0 2px 8px rgba(16,42,67,0.04); }
+        div[data-testid="stAlert"] { border-radius: 12px !important; }
+        h2, h3 { font-weight: 800 !important; color: #17324d; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
 @st.cache_resource(show_spinner=False)
 def _logo_html():
   if not os.path.exists("logo_2.jpg"):
@@ -185,16 +289,34 @@ def _logo_html():
 logo_html = _logo_html()
 
 st.markdown(
-    f"<div class='top-banner'>{logo_html}<h1>🚢 RMS Procurement Shipment"
-    " Execution & Tracking Dashboard</h1></div>",
+    f"""<div class='top-banner'>
+      <div class='tb-left'>{logo_html}
+        <div>
+          <h1>RMS Procurement Shipment Tracker</h1>
+          <div class='tb-sub'>From purchase order to warehouse shelf &mdash; every shipment, every deadline, one view.</div>
+        </div>
+      </div>
+      <div class='tb-right'><span class='live-dot'></span>LIVE &nbsp;&middot;&nbsp; {datetime.now().strftime('%d %b %Y')}</div>
+    </div>""",
     unsafe_allow_html=True,
 )
 
 
+_KPI_ICONS = {
+    "total": "📦", "sea": "🚢", "air": "✈️", "road": "🚛",
+    "cargo value": "💰", "delay": "⏱️", "clear": "🛃",
+}
+
+
 def create_kpi_card(title, value, bg_color, border_color, val_color):
-  return f"""<div class='eff-card' style='background-color: {bg_color}; border-left: 5px solid {border_color};'>
-        <div class='eff-title'>{title}</div>
-        <div class='eff-value' style='color: {val_color};'>{value}</div>
+  icon = next((v for k, v in _KPI_ICONS.items() if k in title.lower()), "📊")
+  clean = "".join(ch for ch in title if ord(ch) < 0x2000).strip()
+  return f"""<div class='eff-card' style='--accent: {border_color}; --tint: {bg_color};'>
+        <div class='eff-icon' style='background: {bg_color}; color: {val_color};'>{icon}</div>
+        <div class='eff-text'>
+          <div class='eff-title'>{clean}</div>
+          <div class='eff-value' style='color: {val_color};'>{value}</div>
+        </div>
         </div>"""
 
 
@@ -895,6 +1017,30 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
     if st.button("⚙️ Settings (Colors & Dropdowns)", use_container_width=True):
       manage_dropdowns_dialog()
 
+  with col_spacer:
+    with st.popover("💾 Backup database", use_container_width=True):
+      st.caption(
+          "A full copy of the database (all fiscal years, edit trail, emails)."
+          " Keep it somewhere safe off the server."
+      )
+      if st.button("Prepare backup file", key="prep_backup"):
+        try:
+          _bk_path = db.create_backup("manual")
+          with open(_bk_path, "rb") as _fh:
+            st.session_state["_bk_bytes"] = _fh.read()
+          st.session_state["_bk_name"] = os.path.basename(_bk_path)
+          os.remove(_bk_path)  # the download is the copy; don't pile up files
+        except Exception as _exc:
+          st.error(f"Could not create the backup: {_exc}")
+      if st.session_state.get("_bk_bytes"):
+        st.download_button(
+            f"⬇️ Download {st.session_state['_bk_name']}",
+            data=st.session_state["_bk_bytes"],
+            file_name=st.session_state["_bk_name"],
+            mime="application/octet-stream",
+            use_container_width=True,
+        )
+
   st.markdown("</div>", unsafe_allow_html=True)
 
   # --- PRIMARY KPI MATH (CARGO VALUE WITH EUR STATIC RATE) ---
@@ -992,7 +1138,7 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
   with met6:
     st.markdown(
         create_kpi_card(
-            "Avg Days for Delay",
+            "Avg Delay (days, + = late)",
             avg_delays,
             "#ffebee" if avg_delays > 0 else "#e8f5e9",
             "#dc3545" if avg_delays > 0 else "#28a745",
@@ -1009,6 +1155,34 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
             "#007bff",
             "#004085",
         ),
+        unsafe_allow_html=True,
+    )
+
+  # --- PIPELINE STRIP ---
+  _stat_col = "Current status"
+  if _stat_col in f_df.columns and len(f_df):
+    _counts = f_df[_stat_col].fillna("").astype(str).str.strip().replace("", "No status").value_counts()
+    _colors = {o["label"]: o["color"] for o in db_status_opts}
+    _total = max(int(_counts.sum()), 1)
+    _segs = "".join(
+        f"<div class='pipe-seg' title='{k}: {v}' style='flex:{v}; background:{_colors.get(k, '#9aa5b1')};'></div>"
+        for k, v in _counts.items()
+    )
+    _legend = "".join(
+        f"<span><i style='background:{_colors.get(k, '#9aa5b1')}'></i>{k} <b>{v}</b> ({v / _total:.0%})</span>"
+        for k, v in _counts.items()
+    )
+    _open = f_df[f_df[_stat_col].astype(str).str.lower() != "received in warehouse"]
+    _warn = int((_open.get("Action warning", pd.Series(dtype=str)).fillna("").astype(str).str.strip() != "").sum())
+    _late = int((pd.to_numeric(_open.get("delays", pd.Series(dtype=float)), errors="coerce") > 0).sum())
+    _chips = (
+        f"<span class='chip {'warn' if _warn else 'good'}'>⚠️ {_warn} need action</span>"
+        f"<span class='chip {'bad' if _late else 'good'}'>⏳ {_late} overdue</span>"
+        f"<span class='chip good'>✅ {int(_counts.get('Received in Warehouse', 0))} delivered</span>"
+    )
+    st.markdown(
+        f"<div class='pipe-wrap'><div class='pipe-head'><div class='pipe-title'>Shipment pipeline</div><div>{_chips}</div></div>"
+        f"<div class='pipe-bar'>{_segs}</div><div class='pipe-legend'>{_legend}</div></div>",
         unsafe_allow_html=True,
     )
 
@@ -1328,7 +1502,7 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
       deadlineDate.setHours(0,0,0,0);
       rmsDate.setHours(0,0,0,0);
       
-      let diffTime = deadlineDate.getTime() - rmsDate.getTime();
+      let diffTime = rmsDate.getTime() - deadlineDate.getTime();
       let diffDays = Math.round(diffTime / (1000 * 3600 * 24));
       return diffDays;
   }
@@ -1637,7 +1811,7 @@ with tab_upload:
   def run_import(import_df, update_existing):
     """Shared by all three add-data modes. Returns True on success."""
     rows, skipped, unmatched = db.prepare_import_rows(
-        import_df, selected_fy, STATUS_OPTIONS
+        import_df, selected_fy, STATUS_OPTIONS, sparse=True
     )
     if not rows:
       st.error(
@@ -1646,7 +1820,7 @@ with tab_upload:
       )
       return False
     created, updated = db.upsert_shipments_bulk(
-        rows, force_new=not update_existing
+        rows, force_new=not update_existing, skip_blank=True
     )
     db.log_action(
         f"Bulk add to {selected_fy}: {created} new, {updated} updated"
