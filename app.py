@@ -9,6 +9,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 from st_aggrid import (
     AgGrid,
     DataReturnMode,
@@ -52,14 +53,6 @@ if _migration and not st.session_state.get("_mig_seen"):
     st.error(
         "Data migration could not be applied and was rolled back - no data was"
         f" changed. Backup: {_migration.get('backup', '')}. Details: {_migration['error']}"
-    )
-  elif "updated_rows" in _migration:
-    st.success(
-        "✅ Tracker data merged into your database (one-time): "
-        f"{_migration['updated_rows']} shipments updated, {_migration['added']} added, "
-        f"{_migration['history_added']} historic shipments loaded"
-        + (f", {_migration['cells_kept']} newer values of yours kept" if _migration["cells_kept"] else "")
-        + f". Full backup taken first: {_migration['backup']}. Every change is in the Edit Trail."
     )
 _DBV = db.db_version()  # changes whenever anything is written to the database
 
@@ -197,127 +190,128 @@ st.markdown(
 st.markdown(
     """
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
         html, body, [class*="css"], .stMarkdown, button, input, textarea, select {
-            font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif !important;
+            font-family: 'Plus Jakarta Sans', 'Segoe UI', system-ui, -apple-system, sans-serif !important;
         }
-        .stApp { background: linear-gradient(180deg, #eef4f8 0%, #f7f9fb 40%, #f4f7f6 100%); }
-        .block-container { max-width: 1700px; padding-top: 0.8rem !important; background: transparent !important; }
+        .stApp { background: linear-gradient(180deg, #f4f7ff 0%, #ffffff 380px) !important; }
+        .block-container { max-width: 1680px; padding: 0.9rem 2.2rem 3rem !important; background: transparent !important; }
 
-        /* HERO BANNER */
-        .top-banner {
-            background: linear-gradient(110deg, #0b3c5d 0%, #117a8b 55%, #1d70b8 100%) !important;
-            padding: 16px 24px !important; border-radius: 16px !important;
-            display: flex; align-items: center; justify-content: space-between;
-            box-shadow: 0 8px 24px rgba(11, 60, 93, 0.25) !important; margin-bottom: 14px !important;
-            position: relative; overflow: hidden;
-        }
-        .top-banner::after {
-            content: ""; position: absolute; right: -60px; top: -80px; width: 260px; height: 260px;
-            border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,0.18), rgba(255,255,255,0) 70%);
-        }
-        .tb-left { display: flex; align-items: center; gap: 14px; }
-        .top-banner h1 { font-size: 24px !important; font-weight: 800 !important; letter-spacing: 0.2px !important; line-height: 1.15; }
-        .tb-sub { color: rgba(255,255,255,0.82); font-size: 13px; margin-top: 3px; }
-        .tb-right {
-            color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 0.8px;
-            background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.25);
-            padding: 7px 14px; border-radius: 999px; z-index: 1; white-space: nowrap;
-        }
-        .live-dot {
-            display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #5cff9d;
-            margin-right: 8px; box-shadow: 0 0 0 0 rgba(92,255,157,0.7); animation: pulse 1.8s infinite;
-        }
-        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(92,255,157,0.65);} 70% { box-shadow: 0 0 0 9px rgba(92,255,157,0);} 100% { box-shadow: 0 0 0 0 rgba(92,255,157,0);} }
+        /* TOP BAR */
+        .app-bar { display: flex; align-items: center; justify-content: space-between; padding: 12px 24px; margin-bottom: 18px; background: #fff; border-radius: 22px; box-shadow: 0 1px 2px rgba(15,23,42,0.04), 0 14px 32px -18px rgba(15,23,42,0.2); }
+        .app-bar-left { display: flex; align-items: center; gap: 16px; }
+        .app-bar-left img { height: 50px !important; width: auto !important; border-radius: 0 !important; background: transparent !important; padding: 0 !important; margin: 0 !important; }
+        .brand { font-size: 30px; font-weight: 800; letter-spacing: -1px; color: #0f172a; }
+        .app-bar-sep { width: 1px; height: 34px; background: #dde4f0; }
+        .app-bar-title { font-size: 26px; font-weight: 800; color: #0f172a; letter-spacing: -0.6px; }
+        .app-bar-date { font-size: 13.5px; font-weight: 600; color: #64748b; background: #fff; border: 1px solid #e8edf5; padding: 9px 18px; border-radius: 999px; }
 
-        /* KPI CARDS */
-        .eff-card {
-            background: #ffffff !important; border: 1px solid #e6ecf1 !important; border-top: 4px solid var(--accent, #117a8b) !important;
-            border-radius: 14px !important; height: 86px !important; padding: 10px 14px !important;
-            flex-direction: row !important; align-items: center !important; gap: 12px;
-            box-shadow: 0 2px 10px rgba(16, 42, 67, 0.06) !important; transition: transform .18s ease, box-shadow .18s ease;
-        }
-        .eff-card:hover { transform: translateY(-3px); box-shadow: 0 10px 22px rgba(16, 42, 67, 0.13) !important; }
-        .eff-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; flex: 0 0 44px; }
-        .eff-text { min-width: 0; }
-        .eff-title { font-size: 10.5px !important; color: #5b6b7a !important; letter-spacing: 0.6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .eff-value { font-size: 23px !important; font-weight: 800 !important; letter-spacing: -0.3px; }
+        /* KPI CARDS - coloured, borderless, text always stays inside */
+        .kpi-card { container-type: inline-size; border: none !important; border-radius: 20px; padding: 18px 20px; min-height: 98px; overflow: hidden; margin-bottom: 18px; box-shadow: 0 1px 2px rgba(15,23,42,0.04); }
+        .kpi-label { font-size: clamp(11px, 7cqw, 14px); font-weight: 700; margin-bottom: 10px; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+        .kpi-value { font-size: clamp(14px, 17cqw, 32px); font-weight: 800; letter-spacing: -1px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-        /* PIPELINE STRIP */
-        .pipe-wrap { background: #fff; border: 1px solid #e6ecf1; border-radius: 14px; padding: 12px 16px; margin: 8px 0 12px 0; box-shadow: 0 2px 10px rgba(16,42,67,0.05); }
-        .pipe-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px; }
-        .pipe-title { font-size: 12px; font-weight: 800; color: #34495e; text-transform: uppercase; letter-spacing: 0.7px; }
-        .chip { display: inline-block; font-size: 11.5px; font-weight: 700; padding: 4px 11px; border-radius: 999px; margin-left: 6px; }
-        .chip.warn { background: #fff4e5; color: #b45309; border: 1px solid #fcd9a8; }
-        .chip.bad { background: #ffebee; color: #b71c1c; border: 1px solid #f5b5bb; }
-        .chip.good { background: #e8f5e9; color: #1b5e20; border: 1px solid #b5dfb8; }
-        .pipe-bar { display: flex; height: 16px; border-radius: 999px; overflow: hidden; background: #edf1f5; }
-        .pipe-seg { height: 100%; transition: flex .4s ease; }
-        .pipe-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 9px; font-size: 12px; color: #455a64; }
-        .pipe-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+        /* KPI row wraps instead of squeezing on narrow screens */
+        div[data-testid="stHorizontalBlock"]:has(.kpi-card) { flex-wrap: wrap !important; gap: 14px !important; }
+        div[data-testid="stHorizontalBlock"]:has(.kpi-card) > div { min-width: 150px !important; flex: 1 1 150px !important; }
 
-        /* TABS, INPUTS, BUTTONS */
-        div[data-baseweb="tab-list"] { background: #ffffff !important; border: 1px solid #e0ebef; border-radius: 14px !important; padding: 6px 8px !important; box-shadow: 0 2px 8px rgba(16,42,67,0.05); }
-        div[data-baseweb="tab"] { font-weight: 600 !important; border-radius: 10px !important; padding: 9px 14px !important; transition: background .15s ease; }
-        div[data-baseweb="tab"]:hover { background-color: #eaf6f8 !important; }
-        div[data-baseweb="tab"][aria-selected="true"] { background: linear-gradient(90deg, #117a8b 0%, #0056b3 100%) !important; border: none !important; box-shadow: 0 4px 10px rgba(0,86,179,0.3) !important; }
-        div[data-baseweb="tab"][aria-selected="true"] p { color: #ffffff !important; }
-        div[data-baseweb="select"] > div, .stTextInput input, .stTextArea textarea { border-radius: 10px !important; }
-        .stButton > button, .stDownloadButton > button { border-radius: 10px !important; font-weight: 700 !important; transition: transform .12s ease, box-shadow .12s ease; }
-        .stButton > button:hover, .stDownloadButton > button:hover { transform: translateY(-1px); box-shadow: 0 5px 12px rgba(0,0,0,0.12); }
-        .stButton > button[kind="primary"] { background: linear-gradient(90deg, #117a8b 0%, #0056b3 100%) !important; border: none !important; }
-        div[data-testid="stExpander"] { border-radius: 14px !important; border: 1px solid #e6ecf1 !important; background: #ffffff; box-shadow: 0 2px 8px rgba(16,42,67,0.04); }
-        div[data-testid="stAlert"] { border-radius: 12px !important; }
-        h2, h3 { font-weight: 800 !important; color: #17324d; }
+        /* PIPELINE */
+        .pipe-wrap { background: #fff; border: none; border-radius: 22px; padding: 20px 24px; margin: 16px 0 18px 0;
+            box-shadow: 0 1px 2px rgba(15,23,42,0.04), 0 14px 32px -16px rgba(15,23,42,0.18); }
+        .pipe-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px; }
+        .pipe-title { font-size: 15px; font-weight: 700; color: #0f172a; }
+        .chip { display: inline-block; font-size: 12.5px; font-weight: 700; padding: 6px 13px; border-radius: 999px; margin-left: 8px; border: none; }
+        .chip.warn { background: #fff1de; color: #b45309; }
+        .chip.bad { background: #fee2e2; color: #b91c1c; }
+        .chip.good { background: #dcfce7; color: #166534; }
+        .pipe-bar { display: flex; gap: 3px; height: 10px; background: transparent; }
+        .pipe-seg { height: 100%; border-radius: 999px; }
+        .pipe-legend { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 14px; font-size: 13px; color: #475569; }
+        .pipe-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; vertical-align: 0; }
+
+        /* TABS - pill navigation (works for both Streamlit tab implementations) */
+        [role="tablist"], div[data-baseweb="tab-list"] { display: inline-flex !important; width: auto !important; gap: 4px; background: #fff !important;
+            border: 1px solid #e8edf5 !important; border-radius: 999px !important; padding: 6px !important; box-shadow: 0 10px 26px -16px rgba(15,23,42,0.25) !important; }
+        [role="tablist"]::after, [role="tablist"]::before, [role="tab"]::after, [role="tab"]::before { display: none !important; content: none !important; }
+        [role="tab"], div[data-baseweb="tab"] { border-radius: 999px !important; border: none !important; border-bottom: none !important; padding: 10px 22px !important; height: auto !important; background: transparent !important; box-shadow: none !important; }
+        [role="tab"] p, [role="tab"] span, div[data-baseweb="tab"] p { color: #475569 !important; font-weight: 600 !important; }
+        [role="tab"]:hover, div[data-baseweb="tab"]:hover { background: #f1f5f9 !important; }
+        [role="tab"][aria-selected="true"], div[data-baseweb="tab"][aria-selected="true"] { background: linear-gradient(90deg, #0d8a9d 0%, #1a63d6 60%, #6b46f0 100%) !important; box-shadow: 0 10px 22px -10px rgba(26,99,214,0.7) !important; }
+        [role="tab"][aria-selected="true"] p, [role="tab"][aria-selected="true"] span, div[data-baseweb="tab"][aria-selected="true"] p { color: #ffffff !important; }
+        div[data-baseweb="tab-highlight"], div[data-baseweb="tab-border"] { display: none !important; }
+        [data-testid="stTabs"] { border-bottom: none !important; }
+        .react-aria-SelectionIndicator, [class*="SelectionIndicator"] { display: none !important; }
+
+        /* INPUTS, BUTTONS, PANELS */
+        div[data-baseweb="select"] > div, .stTextInput input, .stTextArea textarea, .stNumberInput input { border-radius: 14px !important; border: 1px solid #e2e8f0 !important; background: #fff !important; box-shadow: none !important; }
+        .stButton > button, .stDownloadButton > button, [data-testid="stPopover"] button { border-radius: 999px !important; border: 1px solid #e2e8f0 !important; background: #fff !important; color: #0f172a !important; font-weight: 600 !important; box-shadow: none !important; padding: 0.55rem 1.1rem !important; transition: box-shadow .15s ease, border-color .15s ease; }
+        .stButton > button:hover, .stDownloadButton > button:hover, [data-testid="stPopover"] button:hover { border-color: #b8c7f5 !important; box-shadow: 0 10px 22px -14px rgba(26,99,214,0.6) !important; color: #1a63d6 !important; }
+        .stButton > button[kind="primary"] { background: linear-gradient(90deg, #0d8a9d 0%, #1a63d6 60%, #6b46f0 100%) !important; color: #fff !important; border: none !important; }
+        div[data-testid="stExpander"] { border: none !important; border-radius: 22px !important; background: #fff; box-shadow: 0 1px 2px rgba(15,23,42,0.04), 0 14px 32px -16px rgba(15,23,42,0.18); }
+        div[data-testid="stAlert"] { border-radius: 16px !important; }
+        h2, h3 { font-weight: 800 !important; color: #0f172a; letter-spacing: -0.4px; }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
 
+# RMS logo (embedded fallback). Drop your own file next to app.py as logo_2.jpg,
+# logo.png or logo.jpg and it is used instead.
+_DEFAULT_LOGO_B64 = "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"
+
+
 @st.cache_resource(show_spinner=False)
 def _logo_html():
-  if not os.path.exists("logo_2.jpg"):
-    return ""
   import base64
 
-  with open("logo_2.jpg", "rb") as image_file:
-    encoded_string = base64.b64encode(image_file.read()).decode()
-  return f"<img src='data:image/jpeg;base64,{encoded_string}' height='35'/>"
+  for name, mime in (
+      ("logo_2.jpg", "jpeg"), ("logo_2.png", "png"), ("logo.png", "png"),
+      ("logo.jpg", "jpeg"), ("assets/logo.png", "png"),
+  ):
+    if os.path.exists(name):
+      with open(name, "rb") as image_file:
+        encoded = base64.b64encode(image_file.read()).decode()
+      return f"<img src='data:image/{mime};base64,{encoded}' alt='RMS'/>"
+  return f"<img src='data:image/png;base64,{_DEFAULT_LOGO_B64}' alt='RMS'/>"
 
 
 logo_html = _logo_html()
 
+_brand = logo_html
 st.markdown(
-    f"""<div class='top-banner'>
-      <div class='tb-left'>{logo_html}
-        <div>
-          <h1>RMS Procurement Shipment Tracker</h1>
-          <div class='tb-sub'>From purchase order to warehouse shelf &mdash; every shipment, every deadline, one view.</div>
-        </div>
-      </div>
-      <div class='tb-right'><span class='live-dot'></span>LIVE &nbsp;&middot;&nbsp; {datetime.now().strftime('%d %b %Y')}</div>
-    </div>""",
+    f"<div class='app-bar'><div class='app-bar-left'>{_brand}<span class='app-bar-sep'></span>"
+    "<span class='app-bar-title'>Procurement Shipment Execution &amp; Tracking Dashboard</span></div>"
+    f"<div class='app-bar-date'>{datetime.now().strftime('%A, %d %B %Y')}</div></div>",
     unsafe_allow_html=True,
 )
 
 
-_KPI_ICONS = {
-    "total": "📦", "sea": "🚢", "air": "✈️", "road": "🚛",
-    "cargo value": "💰", "delay": "⏱️", "clear": "🛃",
+_KPI_PALETTE = {
+    "total": ("#e9eff8", "#1e3a5f"),
+    "sea": ("#e0f5ea", "#14683a"),
+    "air": ("#e1ecff", "#1d4ed8"),
+    "road": ("#fff0cf", "#8a4b0c"),
+    "cargo": ("#eee6ff", "#5b21b6"),
+    "clear": ("#dcf4f7", "#0e7490"),
 }
 
 
 def create_kpi_card(title, value, bg_color, border_color, val_color):
-  icon = next((v for k, v in _KPI_ICONS.items() if k in title.lower()), "📊")
   clean = "".join(ch for ch in title if ord(ch) < 0x2000).strip()
-  return f"""<div class='eff-card' style='--accent: {border_color}; --tint: {bg_color};'>
-        <div class='eff-icon' style='background: {bg_color}; color: {val_color};'>{icon}</div>
-        <div class='eff-text'>
-          <div class='eff-title'>{clean}</div>
-          <div class='eff-value' style='color: {val_color};'>{value}</div>
-        </div>
-        </div>"""
+  bg, fg = bg_color, val_color
+  for key, (pbg, pfg) in _KPI_PALETTE.items():
+    if key in clean.lower():
+      bg, fg = pbg, pfg
+      break
+  text = str(value)
+  if text.endswith(" USD"):  # the label already says (USD) and the figure has $
+    text = text[:-4]
+  return (
+      f"<div class='kpi-card' style='background: {bg};'>"
+      f"<div class='kpi-label' title='{clean}' style='color: {fg};'>{clean}</div>"
+      f"<div class='kpi-value' title='{text}' style='color: {fg};'>{text}</div></div>"
+  )
 
 
 def format_currency(val, symbol="USD"):
@@ -910,7 +904,7 @@ with col_fy1:
       "📂 Active Tracking Year", fiscal_years, label_visibility="collapsed"
   )
 with col_fy2:
-  with st.expander("➕ Initialize New Tracking Year"):
+  with st.expander("Initialize new tracking year"):
     new_fy = st.text_input("Enter Year (e.g., 2026-2027)")
     if st.button("Create Year"):
       if new_fy and new_fy not in fiscal_years:
@@ -918,11 +912,11 @@ with col_fy2:
         st.rerun()
 
 tab_dash, tab_emails, tab_upload, tab_logs, tab_deleted = st.tabs([
-    "📊 Shipment Tracker & Analytics",
-    "📧 RMS Email Directory",
-    "📂 Upload Excel Data",
-    "📝 Edit Trail",
-    "🗑️ Deleted Records",
+    "Shipment tracker",
+    "RMS email directory",
+    "Upload Excel data",
+    "Edit trail",
+    "Deleted records",
 ])
 
 
@@ -957,6 +951,16 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
     f_df = f_df[f_df["Current status"].isin(f_status)]
   if f_carrier:
     f_df = f_df[f_df["Carrier"].isin(f_carrier)]
+
+  # Click-to-drill status filter (set by the status buttons below the toolbar)
+  f_df_all = f_df
+  _sel = st.session_state.get("quick_status", "All")
+  if "Current status" in f_df_all.columns:
+    _status_txt = f_df_all["Current status"].fillna("").astype(str).str.strip().replace("", "No status")
+    if _sel != "All" and _sel not in set(_status_txt):
+      _sel = "All"
+    if _sel != "All":
+      f_df = f_df_all[_status_txt == _sel]
 
   # Issue 1 Fix: Move "Received in Warehouse" shipments to the VERY BOTTOM of the list
   if not f_df.empty and "Current status" in f_df.columns:
@@ -993,7 +997,7 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
     )
 
     st.download_button(
-        label="📥 Export to Excel (.xlsx)",
+        label="Export to Excel (.xlsx)",
         data=excel_data,
         file_name=f"RMS_Shipment_Tracker_{selected_fy}.xlsx",
         mime=(
@@ -1003,7 +1007,7 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
     )
 
   with col_custom_col:
-    with st.popover("➕ Add Custom Column", use_container_width=True):
+    with st.popover("Add custom column", use_container_width=True):
       new_col_name = st.text_input("Column Name")
       if st.button("Add to Grid") and new_col_name:
         ok, msg = db.add_custom_column(new_col_name.strip())
@@ -1014,11 +1018,11 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
         st.rerun()
 
   with col_config:
-    if st.button("⚙️ Settings (Colors & Dropdowns)", use_container_width=True):
+    if st.button("Settings (colors & dropdowns)", use_container_width=True):
       manage_dropdowns_dialog()
 
   with col_spacer:
-    with st.popover("💾 Backup database", use_container_width=True):
+    with st.popover("Backup database", use_container_width=True):
       st.caption(
           "A full copy of the database (all fiscal years, edit trail, emails)."
           " Keep it somewhere safe off the server."
@@ -1034,7 +1038,7 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
           st.error(f"Could not create the backup: {_exc}")
       if st.session_state.get("_bk_bytes"):
         st.download_button(
-            f"⬇️ Download {st.session_state['_bk_name']}",
+            f"Download {st.session_state['_bk_name']}",
             data=st.session_state["_bk_bytes"],
             file_name=st.session_state["_bk_name"],
             mime="application/octet-stream",
@@ -1042,6 +1046,56 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
         )
 
   st.markdown("</div>", unsafe_allow_html=True)
+
+  # --- STATUS PIPELINE: click a status to drill into its shipments ---
+  _stat_col = "Current status"
+  if _stat_col in f_df_all.columns and len(f_df_all):
+    _txt = f_df_all[_stat_col].fillna("").astype(str).str.strip().replace("", "No status")
+    _counts = _txt.value_counts()
+    _known = [o["label"] for o in db_status_opts]
+    _order = [k for k in _known if k in _counts.index] + [k for k in _counts.index if k not in _known]
+    _colors = {o["label"]: o["color"] for o in db_status_opts}
+    _total = int(_counts.sum())
+    _segs = "".join(
+        f"<div class='pipe-seg' title='{k}: {_counts[k]}' style='flex:{_counts[k]}; background:{_colors.get(k, '#9aa5b1')};"
+        f" opacity:{1 if _sel in ('All', k) else 0.22};'></div>"
+        for k in _order
+    )
+    _open = f_df_all[_txt != "Received in Warehouse"]
+    _warn = int((_open.get("Action warning", pd.Series(dtype=str)).fillna("").astype(str).str.strip() != "").sum())
+    _late = int((pd.to_numeric(_open.get("delays", pd.Series(dtype=float)), errors="coerce") > 0).sum())
+    _chips = (
+        f"<span class='chip {'warn' if _warn else 'good'}'>{_warn} need action</span>"
+        f"<span class='chip {'bad' if _late else 'good'}'>{_late} overdue</span>"
+    )
+    st.markdown(
+        "<div class='pipe-wrap'><div class='pipe-head'><div class='pipe-title'>Shipment pipeline"
+        " <span style='font-weight:500;color:#64748b'>&middot; click a status to see its shipments</span></div>"
+        f"<div>{_chips}</div></div><div class='pipe-bar'>{_segs}</div></div>",
+        unsafe_allow_html=True,
+    )
+
+    def _pick_status(label):
+      st.session_state["quick_status"] = label
+
+    _btn_cols = st.columns(len(_order) + 1)
+    with _btn_cols[0]:
+      st.button(f"All  {_total}", key="qs_all", type="primary" if _sel == "All" else "secondary",
+                on_click=_pick_status, args=("All",), use_container_width=True)
+    _dot_css = ""
+    for _i, _k in enumerate(_order):
+      with _btn_cols[_i + 1]:
+        st.button(f"{_k}  {_counts[_k]}", key=f"qs_{_i}", type="primary" if _sel == _k else "secondary",
+                  on_click=_pick_status, args=(_k,), use_container_width=True)
+      _dot_css += (
+          f".st-key-qs_{_i} button p::before {{content:''; display:inline-block; width:9px; height:9px; border-radius:50%;"
+          f" background:{_colors.get(_k, '#9aa5b1')}; margin-right:8px; box-shadow:0 0 0 2px rgba(255,255,255,.85);}}"
+      )
+    st.markdown(
+        "<style>[class*='st-key-qs_'] button p {white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}"
+        + _dot_css + "</style>",
+        unsafe_allow_html=True,
+    )
 
   # --- PRIMARY KPI MATH (CARGO VALUE WITH EUR STATIC RATE) ---
   if f_df.empty:
@@ -1094,7 +1148,7 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
   with met2:
     st.markdown(
         create_kpi_card(
-            "Sea Freight 🚢",
+            "Sea freight",
             n_sea,
             "#e8f5e9",
             "#28a745",
@@ -1105,7 +1159,7 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
   with met3:
     st.markdown(
         create_kpi_card(
-            "Air Freight ✈️",
+            "Air freight",
             n_air,
             "#e3f2fd",
             "#007bff",
@@ -1116,7 +1170,7 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
   with met4:
     st.markdown(
         create_kpi_card(
-            "Road Freight 🚛",
+            "Road freight",
             n_road,
             "#fff3cd",
             "#ffc107",
@@ -1158,95 +1212,116 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
         unsafe_allow_html=True,
     )
 
-  # --- PIPELINE STRIP ---
-  _stat_col = "Current status"
-  if _stat_col in f_df.columns and len(f_df):
-    _counts = f_df[_stat_col].fillna("").astype(str).str.strip().replace("", "No status").value_counts()
-    _colors = {o["label"]: o["color"] for o in db_status_opts}
-    _total = max(int(_counts.sum()), 1)
-    _segs = "".join(
-        f"<div class='pipe-seg' title='{k}: {v}' style='flex:{v}; background:{_colors.get(k, '#9aa5b1')};'></div>"
-        for k, v in _counts.items()
-    )
-    _legend = "".join(
-        f"<span><i style='background:{_colors.get(k, '#9aa5b1')}'></i>{k} <b>{v}</b> ({v / _total:.0%})</span>"
-        for k, v in _counts.items()
-    )
-    _open = f_df[f_df[_stat_col].astype(str).str.lower() != "received in warehouse"]
-    _warn = int((_open.get("Action warning", pd.Series(dtype=str)).fillna("").astype(str).str.strip() != "").sum())
-    _late = int((pd.to_numeric(_open.get("delays", pd.Series(dtype=float)), errors="coerce") > 0).sum())
-    _chips = (
-        f"<span class='chip {'warn' if _warn else 'good'}'>⚠️ {_warn} need action</span>"
-        f"<span class='chip {'bad' if _late else 'good'}'>⏳ {_late} overdue</span>"
-        f"<span class='chip good'>✅ {int(_counts.get('Received in Warehouse', 0))} delivered</span>"
-    )
-    st.markdown(
-        f"<div class='pipe-wrap'><div class='pipe-head'><div class='pipe-title'>Shipment pipeline</div><div>{_chips}</div></div>"
-        f"<div class='pipe-bar'>{_segs}</div><div class='pipe-legend'>{_legend}</div></div>",
-        unsafe_allow_html=True,
-    )
-
   # --- ADVANCED EXPANDER ---
   with st.expander(
-      "📈 View Procurement Shipment Analytics & Performance Charts",
+      "Analytics and performance charts",
       expanded=True,
   ):
     tab_carrier, tab_status, tab_clearance = st.tabs([
-        "📊 Carrier Distribution",
-        "📊 Status Breakdown",
-        "📊 Clearance Performance",
+        "Carrier distribution",
+        "Status breakdown",
+        "Clearance performance",
     ])
 
+    _UNSET = {"", "tba", "pending", "to be advised", "no", "na", "n/a", "none", "unknown", "-"}
+    _MODE_COLORS = {"SEA": "#1a63d6", "AIR": "#0d8a9d", "ROAD": "#f59e0b"}
+
+    def _style(fig, height):
+      fig.update_layout(
+          height=height, showlegend=False, margin=dict(l=8, r=36, t=8, b=8),
+          font=dict(family="Plus Jakarta Sans, Segoe UI, sans-serif", size=13, color="#334155"),
+          plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+      )
+      return fig
+
+    def _show(fig):
+      try:
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+      except TypeError:  # older Streamlit
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
     with tab_carrier:
-      df_c = f_df[
-          f_df.get("Carrier", pd.Series()).astype(str).str.strip() != ""
-      ]
-      if not df_c.empty:
-        fig_c = px.bar(
-            df_c.groupby("Carrier")
-            .size()
-            .reset_index(name="Shipment Count"),
-            x="Carrier",
-            y="Shipment Count",
-            color="Carrier",
-            text="Shipment Count",
-        )
-        fig_c.update_layout(
-            xaxis_title="Carrier",
-            yaxis_title="Total Shipments",
-            plot_bgcolor="rgba(0,0,0,0)",
-            paper_bgcolor="rgba(0,0,0,0)",
-            height=280,
-        )
-        st.plotly_chart(fig_c, use_container_width=True)
+      _car = f_df.get("Carrier", pd.Series(dtype=str)).fillna("").astype(str).str.strip()
+      _key = _car.str.lower().str.replace(r"\s+", " ", regex=True).replace({"et": "ethiopian", "ethiopian airlines": "ethiopian"})
+      _known = ~_key.isin(_UNSET)
+      if _known.any():
+        _g = pd.DataFrame({"key": _key[_known], "raw": _car[_known]})
+        _tot = _g.groupby("key").size().sort_values(ascending=False)
+        _lab = _g.groupby("key")["raw"].agg(lambda s: s.value_counts().index[0])
+        if "ethiopian" in _lab.index:
+          _lab["ethiopian"] = "Ethiopian Airlines"
+        _top = _tot.head(12)
+        _rows = [(_lab[k], int(n), "#1a63d6") for k, n in _top.items()]
+        if len(_tot) > 12:
+          _rows.append((f"Other ({len(_tot) - 12} carriers)", int(_tot.iloc[12:].sum()), "#94a3b8"))
+        _names = [(n if len(n) <= 34 else n[:33] + "…") for n, _, _ in _rows]
+        fig_c = go.Figure(go.Bar(
+            x=[n for _, n, _ in _rows], y=_names, orientation="h",
+            marker=dict(color=[c for _, _, c in _rows], cornerradius=6),
+            text=[n for _, n, _ in _rows], textposition="outside", cliponaxis=False,
+            customdata=[r[0] for r in _rows], hovertemplate="%{customdata}: %{x} shipments<extra></extra>",
+        ))
+        fig_c.update_yaxes(autorange="reversed", showgrid=False, ticks="", automargin=True)
+        fig_c.update_xaxes(showgrid=True, gridcolor="#eef2f7", zeroline=False, title="Shipments")
+        _show(_style(fig_c, 80 + 36 * len(_rows)))
+        if (~_known).any():
+          st.caption(f"{int((~_known).sum())} shipments have no carrier assigned yet (TBA / pending) and are not shown above.")
+      else:
+        st.info("No carrier recorded for the shipments shown.")
 
     with tab_status:
-      df_s = f_df[
-          f_df.get("Current status", pd.Series()).astype(str).str.strip() != ""
-      ]
-      if not df_s.empty:
-        fig_s = px.pie(
-            df_s, names="Current status", title="Shipments Status Proportion"
-        )
-        fig_s.update_layout(height=280)
-        st.plotly_chart(fig_s, use_container_width=True)
+      _st = f_df.get("Current status", pd.Series(dtype=str)).fillna("").astype(str).str.strip().replace("", "No status")
+      if len(_st):
+        _cnt = _st.value_counts()
+        _ord = [o["label"] for o in db_status_opts if o["label"] in _cnt.index] + [k for k in _cnt.index if k not in {o["label"] for o in db_status_opts}]
+        _col = {o["label"]: o["color"] for o in db_status_opts}
+        sc1, sc2 = st.columns([1, 1.5])
+        with sc1:
+          fig_s = go.Figure(go.Pie(
+              labels=_ord, values=[int(_cnt[k]) for k in _ord], hole=0.62, sort=False,
+              marker=dict(colors=[_col.get(k, "#9aa5b1") for k in _ord], line=dict(color="#ffffff", width=3)),
+              textinfo="percent", textfont=dict(color="#ffffff", size=13),
+              hovertemplate="%{label}: %{value} (%{percent})<extra></extra>",
+          ))
+          fig_s.add_annotation(text=f"<b>{int(_cnt.sum())}</b><br><span style='font-size:12px;color:#64748b'>shipments</span>",
+                               showarrow=False, font=dict(size=30, color="#0f172a"))
+          _show(_style(fig_s, 380))
+        with sc2:
+          _md = f_df.get("Shipping mode", pd.Series(dtype=str)).fillna("").astype(str).str.strip().str.upper().replace("", "NOT SET")
+          _x = pd.DataFrame({"mode": _md.values, "status": _st.values}).groupby(["mode", "status"]).size().reset_index(name="n")
+          fig_m = go.Figure()
+          for k in _ord:
+            _d = _x[_x["status"] == k]
+            if len(_d):
+              fig_m.add_bar(y=_d["mode"], x=_d["n"], name=k, orientation="h", marker=dict(color=_col.get(k, "#9aa5b1")),
+                            hovertemplate=k + ": %{x}<extra></extra>")
+          fig_m.update_layout(barmode="stack")
+          fig_m.update_yaxes(autorange="reversed", showgrid=False, ticks="")
+          fig_m.update_xaxes(showgrid=True, gridcolor="#eef2f7", zeroline=False, title="Shipments by transport mode and status")
+          _style(fig_m, 380)
+          fig_m.update_layout(showlegend=True, legend=dict(orientation="h", y=-0.28, x=0))
+          _show(fig_m)
 
     with tab_clearance:
       df_cl = f_df.dropna(subset=["DAYS TO CLEAR THE SHIPMENT"]).copy()
+      df_cl["DAYS TO CLEAR THE SHIPMENT"] = pd.to_numeric(df_cl["DAYS TO CLEAR THE SHIPMENT"], errors="coerce")
+      df_cl = df_cl.dropna(subset=["DAYS TO CLEAR THE SHIPMENT"])
       if not df_cl.empty:
-        # Issue 2 Fix: Normalize Shipping Mode case so Plotly combines SEA/sea into one single box
-        df_cl["Shipping mode"] = (
-            df_cl["Shipping mode"].astype(str).str.strip().str.upper()
-        )
-        fig_cl = px.box(
-            df_cl,
-            x="Shipping mode",
-            y="DAYS TO CLEAR THE SHIPMENT",
-            color="Shipping mode",
-            title="Days to Clear Shipment by Transport Mode",
-        )
-        fig_cl.update_layout(height=280)
-        st.plotly_chart(fig_cl, use_container_width=True)
+        df_cl["mode"] = df_cl["Shipping mode"].fillna("").astype(str).str.strip().str.upper().replace("", "NOT SET")
+        _s = df_cl.groupby("mode")["DAYS TO CLEAR THE SHIPMENT"].agg(median="median", mean="mean", n="size").reset_index()
+        _s = _s.sort_values("median", ascending=False)
+        fig_cl = go.Figure(go.Bar(
+            x=_s["median"], y=_s["mode"], orientation="h",
+            marker=dict(color=[_MODE_COLORS.get(m, "#94a3b8") for m in _s["mode"]], cornerradius=6),
+            text=[f"{m:.0f} days  ·  {n} shipments" for m, n in zip(_s["median"], _s["n"])], textposition="outside", cliponaxis=False,
+            customdata=_s[["mean", "n"]].values,
+            hovertemplate="%{y}: median %{x:.0f} days, average %{customdata[0]:.1f} days (%{customdata[1]} shipments)<extra></extra>",
+        ))
+        fig_cl.update_yaxes(autorange="reversed", showgrid=False, ticks="")
+        fig_cl.update_xaxes(showgrid=True, gridcolor="#eef2f7", zeroline=False, range=[0, float(_s["median"].max()) * 1.45 + 1], title="Median days to clear (document sharing to arrival at RMS)")
+        _show(_style(fig_cl, 90 + 70 * len(_s)))
+      else:
+        st.info("No clearance times to show yet for the shipments selected.")
 
   # --- AG-GRID TRACKER ---
   action_container_top = st.empty()
@@ -1739,7 +1814,7 @@ with tab_dash:
   f1, f2, f3, f4 = st.columns([2.5, 1, 1, 1])
   with f1:
     search_query = st.text_input(
-        "🔍 Search Shipments",
+        "Search shipments",
         placeholder="Type PO#, Supplier, Cargo, BL/AWB, Carrier, POD...",
     )
   with f2:
@@ -1837,7 +1912,7 @@ with tab_upload:
     st.cache_data.clear()
     return True
 
-  st.subheader(f"📥 Add Shipments — {selected_fy}")
+  st.subheader(f"Add shipments — {selected_fy}")
   st.markdown(
       "Upload an Excel sheet, paste rows copied from Excel, or type straight"
       f" into a table to add or update shipments in **{selected_fy}**."
@@ -1854,14 +1929,14 @@ with tab_upload:
   tp1, tp2 = st.columns([1, 3])
   with tp1:
     st.download_button(
-        "⬇️ Download Excel Template",
+        "Download Excel template",
         data=build_template_bytes(tuple(tmpl_cols), db.COLUMN_HELP_UI()),
         file_name="Shipment_Import_Template.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
     )
   with tp2:
-    with st.expander("📋 See what each column means"):
+    with st.expander("What each column means"):
       st.dataframe(
           pd.DataFrame({
               "Column": tmpl_cols,
