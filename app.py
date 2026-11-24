@@ -195,36 +195,39 @@ st.markdown(
             font-family: 'Plus Jakarta Sans', 'Segoe UI', system-ui, -apple-system, sans-serif !important;
         }
         .stApp { background: linear-gradient(180deg, #f4f7ff 0%, #ffffff 380px) !important; }
-        .block-container { max-width: 1680px; padding: 0.9rem 2.2rem 3rem !important; background: transparent !important; }
+        .block-container { max-width: 1760px; padding: 0.5rem 1.6rem 2rem !important; background: transparent !important; }
+        [data-testid="stVerticalBlock"] { gap: 0.5rem !important; }
+        [data-testid="stHorizontalBlock"] { gap: 0.6rem !important; }
+        label[data-testid="stWidgetLabel"] p { font-size: 12.5px !important; font-weight: 600 !important; color: #475569 !important; margin-bottom: 0 !important; }
 
         /* TOP BAR */
-        .app-bar { display: flex; align-items: center; justify-content: space-between; padding: 12px 24px; margin-bottom: 18px; background: #fff; border-radius: 22px; box-shadow: 0 1px 2px rgba(15,23,42,0.04), 0 14px 32px -18px rgba(15,23,42,0.2); }
+        .app-bar { display: flex; align-items: center; justify-content: space-between; padding: 8px 20px; margin-bottom: 4px; background: #fff; border-radius: 18px; box-shadow: 0 1px 2px rgba(15,23,42,0.04), 0 14px 32px -18px rgba(15,23,42,0.2); }
         .app-bar-left { display: flex; align-items: center; gap: 16px; }
-        .app-bar-left img { height: 50px !important; width: auto !important; border-radius: 0 !important; background: transparent !important; padding: 0 !important; margin: 0 !important; }
+        .app-bar-left img { height: 42px !important; width: auto !important; border-radius: 0 !important; background: transparent !important; padding: 0 !important; margin: 0 !important; }
         .brand { font-size: 30px; font-weight: 800; letter-spacing: -1px; color: #0f172a; }
-        .app-bar-sep { width: 1px; height: 34px; background: #dde4f0; }
-        .app-bar-title { font-size: 26px; font-weight: 800; color: #0f172a; letter-spacing: -0.6px; }
-        .app-bar-date { font-size: 13.5px; font-weight: 600; color: #64748b; background: #fff; border: 1px solid #e8edf5; padding: 9px 18px; border-radius: 999px; }
+        .app-bar-sep { width: 1px; height: 28px; background: #dde4f0; }
+        .app-bar-title { font-size: 22px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px; }
+        .app-bar-date { font-size: 13.5px; font-weight: 600; color: #64748b; background: #fff; border: 1px solid #e8edf5; padding: 7px 16px; border-radius: 999px; }
 
         /* KPI CARDS - coloured, borderless, text always stays inside */
-        .kpi-card { container-type: inline-size; border: none !important; border-radius: 20px; padding: 18px 20px; min-height: 98px; overflow: hidden; margin-bottom: 18px; box-shadow: 0 1px 2px rgba(15,23,42,0.04); }
-        .kpi-label { font-size: clamp(11px, 7cqw, 14px); font-weight: 700; margin-bottom: 10px; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
-        .kpi-value { font-size: clamp(14px, 17cqw, 32px); font-weight: 800; letter-spacing: -1px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .kpi-card { container-type: inline-size; border: none !important; border-radius: 16px; padding: 11px 16px 12px 16px; min-height: 66px; overflow: hidden; margin-bottom: 6px; box-shadow: 0 1px 2px rgba(15,23,42,0.04); }
+        .kpi-label { font-size: clamp(11px, 7cqw, 12.5px); font-weight: 700; margin-bottom: 3px; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+        .kpi-value { font-size: clamp(14px, 15cqw, 26px); font-weight: 800; letter-spacing: -1px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
         /* KPI row wraps instead of squeezing on narrow screens */
         div[data-testid="stHorizontalBlock"]:has(.kpi-card) { flex-wrap: wrap !important; gap: 14px !important; }
         div[data-testid="stHorizontalBlock"]:has(.kpi-card) > div { min-width: 150px !important; flex: 1 1 150px !important; }
 
         /* PIPELINE */
-        .pipe-wrap { background: #fff; border: none; border-radius: 22px; padding: 20px 24px; margin: 16px 0 18px 0;
+        .pipe-wrap { background: #fff; border: none; border-radius: 16px; padding: 10px 18px 12px 18px; margin: 2px 0 0 0;
             box-shadow: 0 1px 2px rgba(15,23,42,0.04), 0 14px 32px -16px rgba(15,23,42,0.18); }
-        .pipe-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px; }
-        .pipe-title { font-size: 15px; font-weight: 700; color: #0f172a; }
-        .chip { display: inline-block; font-size: 12.5px; font-weight: 700; padding: 6px 13px; border-radius: 999px; margin-left: 8px; border: none; }
+        .pipe-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px; }
+        .pipe-title { font-size: 13.5px; font-weight: 700; color: #0f172a; }
+        .chip { display: inline-block; font-size: 12px; font-weight: 700; padding: 4px 11px; border-radius: 999px; margin-left: 8px; border: none; }
         .chip.warn { background: #fff1de; color: #b45309; }
         .chip.bad { background: #fee2e2; color: #b91c1c; }
         .chip.good { background: #dcfce7; color: #166534; }
-        .pipe-bar { display: flex; gap: 3px; height: 10px; background: transparent; }
+        .pipe-bar { display: flex; gap: 3px; height: 7px; background: transparent; }
         .pipe-seg { height: 100%; border-radius: 999px; }
         .pipe-legend { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 14px; font-size: 13px; color: #475569; }
         .pipe-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; vertical-align: 0; }
@@ -244,10 +247,19 @@ st.markdown(
 
         /* INPUTS, BUTTONS, PANELS */
         div[data-baseweb="select"] > div, .stTextInput input, .stTextArea textarea, .stNumberInput input { border-radius: 14px !important; border: 1px solid #e2e8f0 !important; background: #fff !important; box-shadow: none !important; }
-        .stButton > button, .stDownloadButton > button, [data-testid="stPopover"] button { border-radius: 999px !important; border: 1px solid #e2e8f0 !important; background: #fff !important; color: #0f172a !important; font-weight: 600 !important; box-shadow: none !important; padding: 0.55rem 1.1rem !important; transition: box-shadow .15s ease, border-color .15s ease; }
+        .stButton > button, .stDownloadButton > button, [data-testid="stPopover"] button { border-radius: 999px !important; border: 1px solid #e2e8f0 !important; background: #fff !important; color: #0f172a !important; font-weight: 600 !important; box-shadow: none !important; padding: 0.3rem 1rem !important; min-height: 36px !important; transition: box-shadow .15s ease, border-color .15s ease; }
         .stButton > button:hover, .stDownloadButton > button:hover, [data-testid="stPopover"] button:hover { border-color: #b8c7f5 !important; box-shadow: 0 10px 22px -14px rgba(26,99,214,0.6) !important; color: #1a63d6 !important; }
         .stButton > button[kind="primary"] { background: linear-gradient(90deg, #0d8a9d 0%, #1a63d6 60%, #6b46f0 100%) !important; color: #fff !important; border: none !important; }
-        div[data-testid="stExpander"] { border: none !important; border-radius: 22px !important; background: #fff; box-shadow: 0 1px 2px rgba(15,23,42,0.04), 0 14px 32px -16px rgba(15,23,42,0.18); }
+        /* TOOLBAR - actions stand out */
+        div[data-testid="stHorizontalBlock"]:has([data-testid="stDownloadButton"]) button, div[data-testid="stHorizontalBlock"]:has([data-testid="stDownloadButton"]) [data-testid="stPopover"] button {
+            background: #eef4ff !important; border: 1px solid #bcd0fa !important; color: #1a56c4 !important; font-weight: 700 !important; min-height: 38px !important; }
+        div[data-testid="stHorizontalBlock"]:has([data-testid="stDownloadButton"]) button:hover { background: #e0ebff !important; border-color: #8fb0f5 !important; box-shadow: 0 8px 18px -10px rgba(26,99,214,0.7) !important; }
+        div[data-testid="stHorizontalBlock"]:has([data-testid="stDownloadButton"]) [data-testid="stDownloadButton"] button { background: linear-gradient(90deg, #0d8a9d 0%, #1a63d6 60%, #6b46f0 100%) !important; color: #ffffff !important; border: none !important; box-shadow: 0 10px 20px -10px rgba(26,99,214,0.75) !important; }
+        div[data-testid="stHorizontalBlock"]:has([data-testid="stDownloadButton"]) [data-testid="stDownloadButton"] button p { color: #ffffff !important; }
+        [class*="st-key-qs_"] button { min-height: 32px !important; padding: 0.15rem 0.7rem !important; font-size: 13px !important; background: #fff !important; border: 1px solid #d5def0 !important; }
+        [class*="st-key-qs_"] button[kind="primary"] { border: none !important; }
+        [class*="st-key-qs_"] button:hover { border-color: #8fb0f5 !important; }
+        div[data-testid="stExpander"] { border: none !important; border-radius: 16px !important; background: #fff; box-shadow: 0 1px 2px rgba(15,23,42,0.04), 0 14px 32px -16px rgba(15,23,42,0.18); }
         div[data-testid="stAlert"] { border-radius: 16px !important; }
         h2, h3 { font-weight: 800 !important; color: #0f172a; letter-spacing: -0.4px; }
     </style>
@@ -898,7 +910,7 @@ def delete_row_dialog(row_data):
 
 # --- FISCAL YEAR ---
 fiscal_years = db.get_fiscal_years()
-col_fy1, col_fy2 = st.columns([1, 1])
+col_fy1, col_fy2 = st.columns([1, 2.4])
 with col_fy1:
   selected_fy = st.selectbox(
       "📂 Active Tracking Year", fiscal_years, label_visibility="collapsed"
@@ -977,7 +989,6 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
     ).drop(columns=["_is_received"])
 
   # --- ACTIONS & EXPORT ROW WITH UNIFORM TOOLBAR STYLING ---
-  st.markdown("<div class='toolbar-container'>", unsafe_allow_html=True)
   col_export, col_custom_col, col_config, col_spacer = st.columns(
       [3, 3, 3, 3]
   )
@@ -1045,7 +1056,6 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
             use_container_width=True,
         )
 
-  st.markdown("</div>", unsafe_allow_html=True)
 
   # --- STATUS PIPELINE: click a status to drill into its shipments ---
   _stat_col = "Current status"
@@ -1214,13 +1224,13 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
 
   # --- ADVANCED EXPANDER ---
   with st.expander(
-      "Analytics and performance charts",
-      expanded=True,
+      "Analytics: status, clearance and carriers",
+      expanded=False,
   ):
-    tab_carrier, tab_status, tab_clearance = st.tabs([
-        "Carrier distribution",
+    tab_status, tab_clearance, tab_carrier = st.tabs([
         "Status breakdown",
         "Clearance performance",
+        "Carrier distribution",
     ])
 
     _UNSET = {"", "tba", "pending", "to be advised", "no", "na", "n/a", "none", "unknown", "-"}
@@ -1228,7 +1238,7 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
 
     def _style(fig, height):
       fig.update_layout(
-          height=height, showlegend=False, margin=dict(l=8, r=36, t=8, b=8),
+          height=height, showlegend=False, margin=dict(l=8, r=36, t=4, b=4),
           font=dict(family="Plus Jakarta Sans, Segoe UI, sans-serif", size=13, color="#334155"),
           plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
       )
@@ -1250,10 +1260,10 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
         _lab = _g.groupby("key")["raw"].agg(lambda s: s.value_counts().index[0])
         if "ethiopian" in _lab.index:
           _lab["ethiopian"] = "Ethiopian Airlines"
-        _top = _tot.head(12)
+        _top = _tot.head(8)
         _rows = [(_lab[k], int(n), "#1a63d6") for k, n in _top.items()]
-        if len(_tot) > 12:
-          _rows.append((f"Other ({len(_tot) - 12} carriers)", int(_tot.iloc[12:].sum()), "#94a3b8"))
+        if len(_tot) > 8:
+          _rows.append((f"Other ({len(_tot) - 8} carriers)", int(_tot.iloc[8:].sum()), "#94a3b8"))
         _names = [(n if len(n) <= 34 else n[:33] + "…") for n, _, _ in _rows]
         fig_c = go.Figure(go.Bar(
             x=[n for _, n, _ in _rows], y=_names, orientation="h",
@@ -1263,7 +1273,7 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
         ))
         fig_c.update_yaxes(autorange="reversed", showgrid=False, ticks="", automargin=True)
         fig_c.update_xaxes(showgrid=True, gridcolor="#eef2f7", zeroline=False, title="Shipments")
-        _show(_style(fig_c, 80 + 36 * len(_rows)))
+        _show(_style(fig_c, 64 + 29 * len(_rows)))
         if (~_known).any():
           st.caption(f"{int((~_known).sum())} shipments have no carrier assigned yet (TBA / pending) and are not shown above.")
       else:
@@ -1278,14 +1288,14 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
         sc1, sc2 = st.columns([1, 1.5])
         with sc1:
           fig_s = go.Figure(go.Pie(
-              labels=_ord, values=[int(_cnt[k]) for k in _ord], hole=0.62, sort=False,
+              labels=_ord, values=[int(_cnt[k]) for k in _ord], hole=0.64, sort=False,
               marker=dict(colors=[_col.get(k, "#9aa5b1") for k in _ord], line=dict(color="#ffffff", width=3)),
               textinfo="percent", textfont=dict(color="#ffffff", size=13),
               hovertemplate="%{label}: %{value} (%{percent})<extra></extra>",
           ))
           fig_s.add_annotation(text=f"<b>{int(_cnt.sum())}</b><br><span style='font-size:12px;color:#64748b'>shipments</span>",
-                               showarrow=False, font=dict(size=30, color="#0f172a"))
-          _show(_style(fig_s, 380))
+                               showarrow=False, font=dict(size=24, color="#0f172a"))
+          _show(_style(fig_s, 270))
         with sc2:
           _md = f_df.get("Shipping mode", pd.Series(dtype=str)).fillna("").astype(str).str.strip().str.upper().replace("", "NOT SET")
           _x = pd.DataFrame({"mode": _md.values, "status": _st.values}).groupby(["mode", "status"]).size().reset_index(name="n")
@@ -1298,8 +1308,8 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
           fig_m.update_layout(barmode="stack")
           fig_m.update_yaxes(autorange="reversed", showgrid=False, ticks="")
           fig_m.update_xaxes(showgrid=True, gridcolor="#eef2f7", zeroline=False, title="Shipments by transport mode and status")
-          _style(fig_m, 380)
-          fig_m.update_layout(showlegend=True, legend=dict(orientation="h", y=-0.28, x=0))
+          _style(fig_m, 270)
+          fig_m.update_layout(showlegend=True, legend=dict(orientation="h", y=-0.32, x=0, font=dict(size=11)))
           _show(fig_m)
 
     with tab_clearance:
@@ -1319,7 +1329,7 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
         ))
         fig_cl.update_yaxes(autorange="reversed", showgrid=False, ticks="")
         fig_cl.update_xaxes(showgrid=True, gridcolor="#eef2f7", zeroline=False, range=[0, float(_s["median"].max()) * 1.45 + 1], title="Median days to clear (document sharing to arrival at RMS)")
-        _show(_style(fig_cl, 90 + 70 * len(_s)))
+        _show(_style(fig_cl, 70 + 46 * len(_s)))
       else:
         st.info("No clearance times to show yet for the shipments selected.")
 
@@ -1339,8 +1349,8 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
   gb = GridOptionsBuilder.from_dataframe(display_df)
 
   gb.configure_default_column(
-      wrapText=True,
-      autoHeight=True,
+      wrapText=False,
+      autoHeight=False,
       editable=True,
       minWidth=140,
       tooltipValueGetter=JsCode(
@@ -1415,6 +1425,8 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
   gb.configure_grid_options(
       singleClickEdit=True,
       domLayout="normal",
+      rowHeight=38,
+      headerHeight=42,
       getRowStyle=dynamic_rowstyle,
       enableBrowserTooltips=True,
       animateRows=False,
@@ -1494,7 +1506,7 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
     )
   if "Cargo description" in display_df.columns:
     gb.configure_column(
-        "Cargo description", width=380, minWidth=350, wrapText=True
+        "Cargo description", width=380, minWidth=350, wrapText=False, autoHeight=False
     )
   if "Current status" in display_df.columns:
     gb.configure_column(
@@ -1669,7 +1681,7 @@ def render_tracker_grid(df, selected_fy, f_mode, f_status, f_carrier, search_que
 
   # Fixed-height grid: the header row stays visible while rows scroll inside it
   # (and only the visible rows are drawn, which keeps big tables fast).
-  grid_h = int(min(640, max(240, 80 + 56 * len(display_df))))
+  grid_h = int(min(740, max(260, 60 + 40 * len(display_df))))
 
   grid_response = AgGrid(
       display_df,
